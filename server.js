@@ -218,7 +218,6 @@ app.post('/api/admin/delete-user', requireAdmin, async (req, res) => {
     }
 });
 
-
 app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, async (req, res) => {
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ success: false, message: '没有选择文件' });
@@ -227,7 +226,26 @@ app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, as
     const initialFolderId = parseInt(req.body.folderId, 10);
     const userId = req.session.userId;
     const storage = storageManager.getStorage();
-    const relativePaths = req.body.relativePaths;
+    
+    // --- *** 核心修正 Start *** ---
+    let relativePaths = req.body.relativePaths;
+
+    // 1. 确保 relativePaths 存在且为阵列
+    if (!relativePaths) {
+        // 如果完全没有路径资讯，可能是简单的档案拖拽，使用原始档名作为备用
+        relativePaths = req.files.map(file => file.originalname);
+    } else if (!Array.isArray(relativePaths)) {
+        // 如果只上传了一个档案，它可能是一个字串，将其转换为阵列
+        relativePaths = [relativePaths];
+    }
+
+    // 2. 检查档案和路径数量是否匹配
+    if (req.files.length !== relativePaths.length) {
+        // 如果数量不匹配，这是一个异常情况，记录下来并拒绝请求以防止资料错乱
+        console.error('Upload error: Mismatch between file count and path count.');
+        return res.status(400).json({ success: false, message: '上传档案和路径资讯不匹配。' });
+    }
+    // --- *** 核心修正 End *** ---
 
     const results = [];
     try {
@@ -235,19 +253,15 @@ app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, as
             const file = req.files[i];
             const relativePath = relativePaths[i];
 
-            const pathParts = relativePath.split('/');
-            const fileName = pathParts.pop();
+            const pathParts = (relativePath || file.originalname).split('/');
+            const fileName = pathParts.pop() || file.originalname;
             const folderPathParts = pathParts;
 
-            // 遞迴地找到或建立目標資料夾
             const targetFolderId = await data.resolvePathToFolderId(initialFolderId, folderPathParts, userId);
             
-            // 檢查檔案衝突
             const conflict = await data.findFileInFolder(fileName, targetFolderId, userId);
             if (conflict) {
-                // 簡單起見，這裡我們直接跳過已存在的檔案。
-                // 您也可以擴充前端邏輯，讓使用者選擇是否覆蓋。
-                console.log(`檔案 "${relativePath}" 已存在於目標資料夾，已略過。`);
+                console.log(`档案 "${relativePath}" 已存在于目标资料夹，已略過。`);
                 continue; 
             }
 
@@ -286,7 +300,7 @@ app.post('/api/text-file', requireLogin, async (req, res) => {
         } else if (mode === 'create' && folderId) {
              const conflict = await data.checkFullConflict(fileName, folderId, userId);
             if (conflict) {
-                return res.status(409).json({ success: false, message: '同目录下已存在同名档案或资料夾。' });
+                return res.status(409).json({ success: false, message: '同目录下已存在同名档案或资料夹。' });
             }
             result = await storage.upload(contentBuffer, fileName, 'text/plain', userId, folderId);
         } else {

@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const viewSwitchBtn = document.getElementById('view-switch-btn');
     const itemListView = document.getElementById('itemListView');
     const itemListBody = document.getElementById('itemListBody');
-    const collapseBtn = document.getElementById('collapseBtn');
+    const collapseBtn = document.getElementById('collapseBtn'); 
 
     // 状态
     let isMultiSelectMode = false;
@@ -62,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let foldersLoaded = false;
     let currentView = 'grid';
 
+    // --- 辅助函式 ---
     const formatBytes = (bytes, decimals = 2) => {
         if (!bytes || bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -201,6 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentFolderId = folderId;
             const res = await axios.get(`/api/folder/${folderId}`);
             currentFolderContents = res.data.contents;
+            // 清理已不存在的选择项
             const currentIds = new Set([...res.data.contents.folders.map(f => String(f.id)), ...res.data.contents.files.map(f => String(f.id))]);
             selectedItems.forEach((_, key) => {
                 if (!currentIds.has(key)) {
@@ -1083,6 +1085,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    // 初始化
     if (document.getElementById('itemGrid')) {
         const pathParts = window.location.pathname.split('/');
         const lastPart = pathParts.filter(p => p).pop();
@@ -1091,6 +1094,7 @@ document.addEventListener('DOMContentLoaded', () => {
             folderId = 1; 
         }
         loadFolderContents(folderId);
+        
         checkScreenWidthAndCollapse();
         window.addEventListener('resize', checkScreenWidthAndCollapse);
     }

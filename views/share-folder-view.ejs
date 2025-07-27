@@ -7,10 +7,48 @@
     <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
     <link rel="stylesheet" href="/manager.css">
     <style>
-        body { padding: 20px; }
-        .item-card { cursor: pointer; text-decoration: none; color: inherit; }
-        .item-card:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
-        .item-icon video { width: 100%; height: 100%; object-fit: cover; }
+        /* --- *** 滾動條與佈局修正 開始 *** --- */
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden; /* 防止 body 本身滾動 */
+        }
+        body { 
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+        }
+        .main-header {
+            flex-shrink: 0; /* 防止頭部在空間不足時被壓縮 */
+        }
+        .item-grid {
+            flex-grow: 1; /* 讓文件網格區域填滿所有剩餘的垂直空間 */
+            overflow-y: auto; /* 當內容超出時，顯示垂直滾動條 */
+            padding-bottom: 20px; /* 在底部留出一些空間，避免內容緊貼邊緣 */
+        }
+        /* --- *** 滾動條與佈局修正 結束 *** --- */
+
+        .item-card { 
+            cursor: pointer; 
+            text-decoration: none; 
+            color: inherit;
+        }
+        .item-card:hover { 
+            transform: translateY(-3px); 
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+        .item-icon video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover;
+        }
     </style>
 </head>
 <body>
@@ -35,8 +73,15 @@
                             <img src="/share/download/<%= folder.share_token %>/<%= f.id %>" alt="图片" loading="lazy">
                         <% } else if (f.mimetype && f.mimetype.startsWith('video/')) { %>
                             <video src="/share/download/<%= folder.share_token %>/<%= f.id %>#t=0.1" preload="metadata" muted></video>
-                        <% } else { %>
-                            <i class="fas <%= f.mimetype && f.mimetype.startsWith('text/') ? 'fa-file-alt' : 'fa-file' %>"></i>
+                        <% } else { 
+                            let iconClass = 'fa-file';
+                            if (f.mimetype) {
+                                if (f.mimetype.startsWith('text/')) iconClass = 'fa-file-alt';
+                                else if (f.mimetype.includes('pdf')) iconClass = 'fa-file-pdf';
+                                else if (f.mimetype.includes('archive') || f.mimetype.includes('zip')) iconClass = 'fa-file-archive';
+                            }
+                        %>
+                            <i class="fas <%= iconClass %>"></i>
                         <% } %>
                     </div>
                     <div class="item-info"><h5 title="<%= f.fileName %>"><%= f.fileName %></h5></div>

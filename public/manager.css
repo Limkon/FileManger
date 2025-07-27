@@ -12,23 +12,19 @@ body {
   margin: 0;
   padding: 20px;
   color: var(--text-color);
-  /* --- 佈局修正 開始 --- */
   display: flex;
   flex-direction: column;
   height: 100vh;
   box-sizing: border-box;
   overflow: hidden; /* 防止 body 本身滾動 */
-  /* --- 佈局修正 結束 --- */
 }
 .container {
   max-width: 1200px;
   margin: 0 auto;
-  /* --- 佈局修正 開始 --- */
   display: flex;
   flex-direction: column;
   height: 100%;
   width: 100%;
-  /* --- 佈局修正 結束 --- */
 }
 .main-header {
   display: flex;
@@ -36,7 +32,7 @@ body {
   align-items: center;
   margin-bottom: 20px;
   flex-wrap: wrap;
-  flex-shrink: 0; /* 防止 header 在 flex 佈局中被壓縮 */
+  flex-shrink: 0; 
 }
 .main-header a, #homeLink {
   text-decoration: none;
@@ -82,18 +78,17 @@ body {
 .breadcrumb span { color: #6c757d; font-weight: normal; }
 .breadcrumb .separator { margin: 0 10px; color: #6c757d; }
 
-/* --- *** 滾動條修正 *** --- */
+/* 項目網格與拖拽區域 (含滾動條) */
 #dropZone {
     position: relative;
     border: 2px dashed #ccc;
     border-radius: 8px;
     padding: 20px;
     transition: border-color 0.3s, background-color 0.3s;
-    flex-grow: 1; /* 讓此區域填滿剩餘空間 */
-    overflow-y: auto; /* 當內容超出時，顯示垂直滾動條 */
-    min-height: 200px; /* 設定一個最小高度 */
+    flex-grow: 1; 
+    overflow-y: auto;
+    min-height: 200px; 
 }
-/* --- *** 修正結束 *** --- */
 
 #dropZone.dragover {
     border-color: var(--primary-color);
@@ -186,7 +181,7 @@ body {
 }
 
 .item-list-view {
-    padding-bottom: 100px;
+    /* padding-bottom: 100px; */ /* 由 #dropZone 控制 */
 }
 
 .list-header, .list-item {
@@ -237,9 +232,10 @@ body {
     text-align: right;
     color: #6c757d;
     font-size: 0.9em;
+    flex-shrink: 0;
 }
 
-/* --- 浮动操作栏 --- */
+/* 浮动操作栏 */
 .action-bar {
   position: fixed;
   bottom: 20px;
@@ -400,15 +396,23 @@ body {
         font-size: 12px;
     }
 
-    /* --- BUG 修复: 列表视图 --- */
-    .list-size, .list-date {
-        /* display: none; */ /* 移除此行来显示它们 */
-        width: 80px; /* 减小宽度以适应小萤幕 */
-        font-size: 0.8em; /* 减小字体大小 */
-        flex-shrink: 0; /* 防止被压缩 */
+    /* --- BUG 修复: 列表视图 & 横向滚动 --- */
+    .item-list-view {
+        overflow-x: auto; /* 啟用水平滾動 */
+    }
+    .list-header, .list-item {
+        min-width: 500px; /* 設定最小寬度以觸發滾動 */
     }
     .list-name {
-        flex-grow: 1;
+        flex: 1 1 200px; /* 允許文件名欄位伸展 */
+        white-space: normal; /* 允許換行 */
+        word-break: break-all; /* 強制換行 */
+    }
+    .list-size, .list-date {
+        display: block; /* 確保顯示 */
+        width: 100px; /* 調整寬度 */
+        font-size: 0.8em;
+        flex-shrink: 0;
     }
     
     /* --- BUG 修复: 工具栏 --- */
@@ -416,19 +420,27 @@ body {
         padding: 10px;
         width: 95%;
         bottom: 10px;
-        height: auto; /* 允许高度自适应内容 */
-        flex-wrap: wrap; /* 允许内部元素换行 */
+        height: auto; /* 允许高度自适应 */
+        flex-wrap: wrap; /* 允许换行 */
+        justify-content: center; /* 居中内容 */
+        gap: 10px;
     }
     .action-bar #selectionCount {
-        font-size: 12px;
-        width: 100%; /* 让文字单独占一行 */
-        margin-bottom: 8px; /* 增加和按钮之间的间距 */
+        width: 100%; 
+        order: -1; /* 移到最上面 */
         text-align: center;
+        margin-bottom: 5px;
+        font-size: 12px;
+    }
+    .action-bar #selectAllBtn {
+        margin-right: auto; /* 推到最左邊 */
     }
     .action-bar .actions {
-        gap: 5px; /* 在手机端缩小按钮间距 */
-        flex-grow: 1; /* 让按钮组占据可用空间 */
-        justify-content: center; /* 居中按钮 */
+        display: flex;
+        flex-wrap: wrap; /* 允許按鈕換行 */
+        justify-content: center; /* 居中按鈕 */
+        gap: 5px;
+        width: 100%; /* 佔滿整行 */
     }
     .action-bar .actions button {
         padding: 8px;

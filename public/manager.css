@@ -132,12 +132,13 @@ body {
 .list-icon .fa-folder { color: #ffc107; }
 .list-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-size, .list-date { width: 150px; text-align: right; color: #6c757d; font-size: 0.9em; flex-shrink: 0; }
+
+/* --- 浮动工具栏 --- */
 .action-bar {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
   width: 90%; max-width: 700px; background-color: #212529; color: white;
   border-radius: 12px; padding: 10px 15px; 
   display: flex; 
-  justify-content: space-between;
   align-items: center; 
   gap: 10px;
   box-shadow: 0 -4px 15px rgba(0,0,0,0.2);
@@ -145,10 +146,20 @@ body {
   z-index: 1000; 
   box-sizing: border-box;
 }
-.action-bar-top-row { display: flex; align-items: center; flex-grow: 1; }
+.action-bar-top-row {
+  display: flex;
+  align-items: center;
+  flex-grow: 1;
+}
+.action-bar-info-left {
+  display: flex;
+  align-items: center;
+  flex-grow: 1;
+  overflow: hidden; /* 防止内容溢出 */
+}
 .action-bar #selectAllBtn { background: #495057; color: white; border: none; padding: 8px 12px; margin-right: 15px; border-radius: 5px; cursor: pointer; flex-shrink: 0; }
-.action-bar #selectionCount { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1; }
-.action-bar .actions { display: flex; align-items: center; gap: 8px; }
+.action-bar #selectionCount { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.action-bar .actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .action-bar .actions button { 
     background: #495057; color: white; border: none; padding: 8px 12px; border-radius: 5px; 
     cursor: pointer; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; 
@@ -156,10 +167,9 @@ body {
 }
 .action-bar .actions button:disabled { background: #343a40; color: #6c757d; cursor: not-allowed; opacity: 0.6; }
 .action-bar .actions button:not(:disabled):hover { opacity: 0.85; }
-
 #collapseBtn { 
     background: none; border: none; color: #adb5bd; cursor: pointer;
-    padding: 8px; line-height: 1; font-size: 18px; 
+    padding: 8px; line-height: 1; font-size: 18px; margin-left: 10px; 
 }
 #collapseBtn:hover { color: white; }
 
@@ -172,6 +182,7 @@ body {
 .action-bar.collapsed .actions {
     display: none;
 }
+
 .action-bar .actions #createFolderBtn { background-color: #17a2b8; }
 .action-bar .actions #textEditBtn { background-color: #007bff; }
 .action-bar .actions #multiSelectBtn { background-color: #6f42c1; }
@@ -182,7 +193,8 @@ body {
 .action-bar .actions #downloadBtn { background-color: #20c997; }
 .action-bar .actions #deleteBtn { background-color: #dc3545; }
 
-/* 其他樣式... */
+/* 模態框等其他樣式 */
+/* ... (此處省略了其他未變更的CSS代碼以保持簡潔) ... */
 .modal {
     display: none; position: fixed; z-index: 1001; left: 0; top: 0;
     width: 100%; height: 100%; overflow: auto; background-color: rgba(248, 249, 250, 0.95);
@@ -276,6 +288,7 @@ body {
     .item-icon { font-size: 48px; }
     .item-info { padding: 8px; }
     .item-info h5 { font-size: 12px; }
+
     .item-list-view { overflow-x: auto; }
     .list-header, .list-item { min-width: 500px; }
     .list-name { flex: 1 1 200px; }
@@ -286,27 +299,34 @@ body {
         width: 95%;
         bottom: 10px;
         height: auto;
-        flex-wrap: wrap; /* 允许换行 */
-        gap: 8px;
+        flex-wrap: wrap;
+        gap: 10px;
     }
     .action-bar-top-row {
-        flex-basis: 100%; /* 占满第一行 */
+        flex-basis: 100%;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        order: 1; /* 确保在第一行 */
+    }
+    .action-bar-info-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
     }
     .action-bar .actions {
-        flex-basis: 100%; /* 占满第二行 */
-        justify-content: center; /* 居中按钮 */
-        flex-wrap: wrap;
+        flex-basis: 100%;
+        order: 2; /* 确保在第二行 */
+        justify-content: center;
     }
-    .action-bar .actions button,
-    .action-bar #selectAllBtn {
+
+    .action-bar #selectAllBtn,
+    .action-bar #collapseBtn,
+    .action-bar .actions button {
         padding: 8px;
         font-size: 12px;
     }
-    .action-bar #selectionCount { font-size: 12px; }
-    .action-bar #collapseBtn { padding: 8px; font-size: 12px; }
+     .action-bar #selectionCount { font-size: 12px; }
     .action-bar .actions button .button-text, .main-header .upload-link-btn .button-text {
         display: none;
     }
@@ -317,6 +337,7 @@ body {
     .shares-table .share-link { flex-direction: column; align-items: stretch; }
     .shares-table .share-link input { width: 100%; box-sizing: border-box; }
     .copy-btn, .cancel-btn { width: 100%; margin-top: 5px; }
+
     .editor-header { flex-direction: column; align-items: stretch; }
     .editor-header input[type="text"] { margin-right: 0; margin-bottom: 10px; width: 100%; box-sizing: border-box; }
     .editor-actions { width: 100%; justify-content: space-between; gap: 10px; }

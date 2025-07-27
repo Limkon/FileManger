@@ -292,37 +292,45 @@ body {
     .list-name { flex: 1 1 200px; }
     .list-size, .list-date { display: block; width: 100px; font-size: 0.8em; flex-shrink: 0; }
     
+    /* --- Start of Fix --- */
     .action-bar {
         padding: 10px;
         width: 95%;
         bottom: 10px;
         flex-wrap: wrap; 
         gap: 10px;
-        /* 在移动端，取消 action-bar-content 的特殊布局 */
-        .action-bar-content {
-            display: contents;
-        }
+        display: flex;
+        align-items: center;
+    }
+    .action-bar .action-bar-content {
+        display: contents;
     }
     .action-bar-top-row {
-        flex-basis: 100%;
+        order: 1;
+        flex-grow: 1;
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        order: 1; 
+    }
+    .action-bar #collapseBtn {
+        order: 2;
+        padding: 8px;
+        font-size: 12px;
     }
     .action-bar .actions {
+        order: 3;
         flex-basis: 100%;
-        order: 2; 
         justify-content: center;
         flex-wrap: wrap;
     }
+    /* --- End of Fix --- */
+
     .action-bar .actions button,
     .action-bar #selectAllBtn {
         padding: 8px;
         font-size: 12px;
     }
     .action-bar #selectionCount { font-size: 12px; }
-    .action-bar #collapseBtn { order: 1; padding: 8px; font-size: 12px; }
+
     .action-bar .actions .button-text, .main-header .upload-link-btn .button-text {
         display: none;
     }

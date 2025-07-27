@@ -30,8 +30,8 @@
             align-items: center;
             justify-content: space-between;
             flex-shrink: 0;
-            flex-wrap: wrap; /* 允许换行 */
-            gap: 10px; /* 元素间的间距 */
+            flex-wrap: wrap; 
+            gap: 10px;
         }
         .editor-header input[type="text"] {
             border: none;
@@ -39,8 +39,8 @@
             font-weight: 500;
             padding: 8px;
             border-radius: 4px;
-            flex-grow: 1; /* 占据可用空间 */
-            min-width: 200px; /* 最小宽度 */
+            flex-grow: 1;
+            min-width: 200px;
         }
         .editor-header input[type="text"]:focus {
             outline: 2px solid var(--primary-color);
@@ -48,7 +48,7 @@
         .editor-actions {
             display: flex;
             align-items: center;
-            flex-shrink: 0; /* 防止按钮被压缩 */
+            flex-shrink: 0;
         }
         .editor-actions button {
             padding: 8px 16px;
@@ -70,13 +70,12 @@
             color: var(--success-color);
             font-weight: bold;
             margin-left: 15px;
-            display: none; /* 默认在小屏幕上隐藏 */
         }
         .editor-container {
             flex-grow: 1;
             padding: 10px;
             box-sizing: border-box;
-            display: flex; /* 使用 flex 布局 */
+            display: flex;
         }
         #editor {
             width: 100%;
@@ -94,48 +93,41 @@
             outline: none;
         }
 
-        /* --- *** 移动设备适应性修正 开始 *** --- */
-        @media (min-width: 600px) {
-            #saveStatus {
-                display: inline; /* 在较大屏幕上显示 "已储存" 状态 */
-            }
-        }
-        @media (max-width: 599px) {
+        /* --- *** 移动设备适应性修正 *** --- */
+        @media (max-width: 600px) {
             .editor-header {
                 padding: 10px;
-                flex-direction: column; /* 垂直堆叠 */
-                align-items: stretch; /* 元素拉伸以适应容器宽度 */
+                flex-direction: column;
+                align-items: stretch;
             }
             .editor-header input[type="text"] {
                 margin-right: 0;
-                margin-bottom: 10px; /* 在输入框和按钮之间添加一些间距 */
+                margin-bottom: 10px;
                 width: 100%;
                 box-sizing: border-box;
             }
             .editor-actions {
                 width: 100%;
-                justify-content: space-between; /* 让按钮分布在两端 */
+                justify-content: space-between;
+                gap: 10px; /* 使用 gap 替代 margin 来控制间距 */
             }
             .editor-actions button {
                 flex-grow: 1; /* 让按钮平分空间 */
-                margin-left: 5px;
-                margin-right: 5px;
+                margin: 0; /* 移除外边距 */
+                padding: 10px 8px; /* 调整内边距使其更适合小屏幕 */
+                font-size: 14px; /* 确保字体大小一致 */
             }
-             .editor-actions button:first-child {
-                margin-left: 0;
-            }
-            .editor-actions button:last-child {
-                margin-right: 0;
+            #saveStatus {
+                 display: none; /* 在小屏幕上隐藏文字提示，节省空间 */
             }
             .editor-container {
                 padding: 5px;
             }
             #editor {
                 padding: 10px;
-                font-size: 14px; /* 在小屏幕上稍微减小字体大小 */
+                font-size: 14px;
             }
         }
-        /* --- *** 移动设备适应性修正 结束 *** --- */
     </style>
 </head>
 <body>
@@ -214,21 +206,16 @@
                     setTimeout(() => {
                         saveStatus.textContent = '';
                     }, 2000);
-
-                    // --- *** 关键修正 开始 *** ---
-                    // 无论是新建还是编辑，只要储存成功，就用伺服器回传的最新 fileId 更新本地状态
+                    
                     if (response.data.success && response.data.fileId) {
                         fileId = response.data.fileId;
-                        mode = 'edit'; // 储存后一律变为编辑模式
+                        mode = 'edit'; 
                         
-                        // 更新浏览器地址栏的 URL，以反映最新的 fileId
                         const newUrl = `${window.location.pathname}?mode=edit&fileId=${fileId}`;
                         history.pushState({}, '', newUrl);
 
-                        // 同步更新输入框中的档名，以防档名被自动加上 .txt
                         fileNameInput.value = fileName;
                     }
-                    // --- *** 关键修正 结束 *** ---
 
                 } catch (error) {
                     alert('储存失败：' + (error.response?.data?.message || '伺服器错误'));

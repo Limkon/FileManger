@@ -12,18 +12,23 @@ body {
   margin: 0;
   padding: 20px;
   color: var(--text-color);
+  /* --- 佈局修正 開始 --- */
   display: flex;
   flex-direction: column;
   height: 100vh;
   box-sizing: border-box;
+  overflow: hidden; /* 防止 body 本身滾動 */
+  /* --- 佈局修正 結束 --- */
 }
 .container {
   max-width: 1200px;
   margin: 0 auto;
+  /* --- 佈局修正 開始 --- */
   display: flex;
   flex-direction: column;
   height: 100%;
   width: 100%;
+  /* --- 佈局修正 結束 --- */
 }
 .main-header {
   display: flex;
@@ -118,7 +123,6 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 20px;
-    padding-bottom: 100px;
 }
 .item-grid:empty::after {
     content: '将文件拖到此处以上传';
@@ -235,7 +239,7 @@ body {
     font-size: 0.9em;
 }
 
-/* 浮动操作栏 */
+/* --- 浮动操作栏 --- */
 .action-bar {
   position: fixed;
   bottom: 20px;
@@ -253,6 +257,7 @@ body {
   box-shadow: 0 -4px 15px rgba(0,0,0,0.2);
   transition: bottom 0.3s ease-in-out;
   z-index: 1000;
+  box-sizing: border-box;
 }
 .action-bar.visible { bottom: 20px; }
 .action-bar #selectAllBtn { background: #495057; color: white; border: none; padding: 8px 12px; margin-right: 15px; border-radius: 5px; cursor: pointer; flex-shrink: 0; }
@@ -329,7 +334,7 @@ body {
 #confirmMoveBtn, #cancelMoveBtn { width: 48%; padding: 10px; margin-top: 15px; border-radius: 5px; border: none; cursor: pointer; }
 #confirmMoveBtn { background-color: var(--primary-color); color: white; }
 #cancelMoveBtn { background-color: #6c757d; color: white; }
-.search-form { position: relative; flex-grow: 1; max-width: 400px; }
+.search-form { position: relative; flex-grow: 1; max-width: 400px; flex-shrink: 0; }
 #searchInput { width: 100%; padding: 10px 15px 10px 40px; border-radius: 20px; border: 1px solid #ccc; box-sizing: border-box;}
 .search-form .fa-search { position: absolute; top: 13px; left: 15px; color: #999; }
 #multiSelectBtn.active { background-color: var(--primary-color); box-shadow: 0 0 0 2px white, 0 0 0 4px var(--primary-color); }
@@ -394,26 +399,39 @@ body {
     .item-info h5 {
         font-size: 12px;
     }
+
+    /* --- BUG 修复: 列表视图 --- */
     .list-size, .list-date {
-        display: none;
+        /* display: none; */ /* 移除此行来显示它们 */
+        width: 80px; /* 减小宽度以适应小萤幕 */
+        font-size: 0.8em; /* 减小字体大小 */
+        flex-shrink: 0; /* 防止被压缩 */
     }
     .list-name {
         flex-grow: 1;
     }
+    
+    /* --- BUG 修复: 工具栏 --- */
     .action-bar {
         padding: 10px;
         width: 95%;
         bottom: 10px;
+        height: auto; /* 允许高度自适应内容 */
+        flex-wrap: wrap; /* 允许内部元素换行 */
     }
     .action-bar #selectionCount {
         font-size: 12px;
+        width: 100%; /* 让文字单独占一行 */
+        margin-bottom: 8px; /* 增加和按钮之间的间距 */
+        text-align: center;
     }
     .action-bar .actions {
         gap: 5px; /* 在手机端缩小按钮间距 */
+        flex-grow: 1; /* 让按钮组占据可用空间 */
+        justify-content: center; /* 居中按钮 */
     }
     .action-bar .actions button {
         padding: 8px;
-        /* margin-left: 5px; - 改用 gap 替代 */
         font-size: 12px;
     }
     .action-bar .actions button .button-text,

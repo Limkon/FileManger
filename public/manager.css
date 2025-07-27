@@ -323,7 +323,7 @@ body {
     }
     .action-bar #selectionCount { font-size: 12px; }
     .action-bar #collapseBtn { order: 1; padding: 8px; font-size: 12px; }
-    .action-bar .actions button .button-text, .main-header .upload-link-btn .button-text {
+    .action-bar .actions .button-text, .main-header .upload-link-btn .button-text {
         display: none;
     }
     

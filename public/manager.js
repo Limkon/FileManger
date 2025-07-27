@@ -119,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 folderInput.value = '';
                 loadFolderContents(currentFolderId);
             } else {
-                showNotification('上传失败', 'error', notificationContainer);
+                showNotification(`上传失败: ${res.data.message}`, 'error', notificationContainer);
             }
         } catch (error) {
             showNotification('上传失败: ' + (error.response?.data?.message || '伺服器错误'), 'error', notificationContainer);
@@ -129,7 +129,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
-    // --- *** 核心修正 *** ---
     const uploadFiles = async (files, targetFolderId, isDrag = false) => {
         if (files.length === 0) {
             showNotification('请选择档案。', 'error', !isDrag ? uploadNotificationArea : null);
@@ -153,20 +152,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await axios.post('/api/check-existence', { files: filesToCheck, folderId: targetFolderId });
             existenceData = res.data.files;
         } catch (error) {
-            showNotification('检查档案是否存在时出错。', 'error', !isDrag ? null : uploadNotificationArea);
+            showNotification(error.response?.data?.message || '检查档案是否存在时出错。', 'error', !isDrag ? null : uploadNotificationArea);
             return;
         }
     
         const filesToUpload = [];
-        const filesToOverwrite = [];
+        const pathsToOverwrite = [];
     
         for (const file of fileObjects) {
             const relativePath = file.webkitRelativePath || file.name;
             const existing = existenceData.find(f => f.relativePath === relativePath && f.exists);
     
             if (existing) {
-                if (confirm(`档案 "${existing.name}" 已存在于目标资料夹。您要覆盖它吗？`)) {
-                    filesToOverwrite.push({ name: existing.name, messageId: existing.messageId });
+                if (confirm(`档案 "${existing.name}" 已存在于目标位置 (${existing.relativePath})。您要覆盖它吗？`)) {
+                    pathsToOverwrite.push(relativePath);
                     filesToUpload.push(file);
                 }
             } else {
@@ -185,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('relativePaths', file.webkitRelativePath || file.name);
         });
         formData.append('folderId', targetFolderId);
-        formData.append('overwrite', JSON.stringify(filesToOverwrite));
+        formData.append('overwritePaths', JSON.stringify(pathsToOverwrite));
     
         const captionInput = document.getElementById('uploadCaption');
         if (captionInput && captionInput.value && !isDrag) {

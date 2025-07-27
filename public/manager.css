@@ -132,51 +132,21 @@ body {
 .list-icon .fa-folder { color: #ffc107; }
 .list-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-size, .list-date { width: 150px; text-align: right; color: #6c757d; font-size: 0.9em; flex-shrink: 0; }
-
-/* --- *** 浮动工具栏修正 *** --- */
 .action-bar {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  max-width: 700px;
-  background-color: #212529;
-  color: white;
-  border-radius: 12px;
-  padding: 15px; 
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-rows: auto auto;
-  grid-template-areas: 
-    "select-all count collapse"
-    "actions actions actions";
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  width: 90%; max-width: 700px; background-color: #212529; color: white;
+  border-radius: 12px; padding: 15px; 
+  display: flex; /* 默认是 flex 布局 */
+  justify-content: space-between;
   align-items: center; 
-  gap: 8px 15px;
   box-shadow: 0 -4px 15px rgba(0,0,0,0.2);
   transition: all 0.3s ease-in-out; 
   z-index: 1000; 
   box-sizing: border-box;
 }
-.action-bar #selectAllBtn { grid-area: select-all; }
-.action-bar #selectionCount { grid-area: count; }
-#collapseBtn { 
-    grid-area: collapse;
-    background: none; border: none; color: #adb5bd; cursor: pointer;
-    padding: 8px; line-height: 1; font-size: 18px;
-    justify-self: end;
-}
-#collapseBtn:hover { color: white; }
-.action-bar .actions { 
-    grid-area: actions; 
-    display: flex; 
-    align-items: center; 
-    gap: 8px; 
-    justify-content: center; 
-    flex-wrap: wrap; /* 允许按钮换行 */
-}
-.action-bar #selectAllBtn { background: #495057; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; }
-.action-bar #selectionCount { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.action-bar #selectAllBtn { background: #495057; color: white; border: none; padding: 8px 12px; margin-right: 15px; border-radius: 5px; cursor: pointer; flex-shrink: 0; }
+.action-bar #selectionCount { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1; }
+.action-bar .actions { display: flex; align-items: center; gap: 8px; }
 .action-bar .actions button { 
     background: #495057; color: white; border: none; padding: 8px 12px; border-radius: 5px; 
     cursor: pointer; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; 
@@ -184,17 +154,15 @@ body {
 }
 .action-bar .actions button:disabled { background: #343a40; color: #6c757d; cursor: not-allowed; opacity: 0.6; }
 .action-bar .actions button:not(:disabled):hover { opacity: 0.85; }
-
-/* 折叠后的状态: 变成右下角的按钮 */
+#collapseBtn { 
+    background: none; border: none; color: #adb5bd; cursor: pointer;
+    padding: 8px; line-height: 1; font-size: 18px;
+    margin-left: 10px; /* 与右侧按钮组保持间距 */
+}
+#collapseBtn:hover { color: white; }
 .action-bar.collapsed {
-    left: auto;
-    right: 20px;
-    transform: none;
-    width: 50px;
-    height: 50px;
-    padding: 0;
-    border-radius: 50%;
-    grid-template-areas: "collapse collapse" "collapse collapse";
+    left: auto; right: 20px; transform: none;
+    width: 50px; height: 50px; padding: 0; border-radius: 50%;
     justify-content: center;
 }
 .action-bar.collapsed #selectAllBtn,
@@ -202,10 +170,6 @@ body {
 .action-bar.collapsed .actions {
     display: none;
 }
-.action-bar.collapsed #collapseBtn {
-    justify-self: center;
-}
-
 .action-bar .actions #createFolderBtn { background-color: #17a2b8; }
 .action-bar .actions #textEditBtn { background-color: #007bff; }
 .action-bar .actions #multiSelectBtn { background-color: #6f42c1; }
@@ -316,11 +280,47 @@ body {
     .list-size, .list-date { display: block; width: 100px; font-size: 0.8em; flex-shrink: 0; }
     
     .action-bar {
-        padding: 10px; width: 95%; bottom: 10px; 
+        padding: 10px;
+        width: 95%;
+        bottom: 10px;
+        height: auto;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        display: flex; /* 切换回 Flexbox 以简化 */
     }
-    .action-bar .actions button .button-text, .main-header .upload-link-btn .button-text {
-        display: none;
+    .action-bar > * {
+        flex-basis: 100%; /* 默认让子元素占满一行以实现堆叠 */
     }
+    .action-bar .actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 5px;
+        order: 2; /* 确保按钮在最下面 */
+    }
+    .top-action-bar {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        order: 1; /* 确保这部分在最上面 */
+    }
+    .action-bar #selectAllBtn {
+        flex-basis: auto;
+        margin-right: 10px;
+    }
+    .action-bar #selectionCount {
+        flex-grow: 1;
+        text-align: left;
+        font-size: 12px;
+    }
+    .action-bar #collapseBtn {
+        flex-basis: auto;
+    }
+
+    .action-bar .actions button { padding: 8px; font-size: 12px; }
+    .action-bar .actions button .button-text, .main-header .upload-link-btn .button-text { display: none; }
+
     .setting-card { padding: 15px; }
     .setting-card button, .setting-card input, .setting-card select { width: 100%; box-sizing: border-box; }
     .user-table .actions button { padding: 4px 8px; font-size: 11px; }

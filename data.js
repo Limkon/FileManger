@@ -550,6 +550,32 @@ function checkFolderConflict(folderNames, targetFolderId, userId) {
     });
 }
 
+async function resolvePathToFolderId(startFolderId, pathParts, userId) {
+    let currentParentId = startFolderId;
+    for (const part of pathParts) {
+        if (!part) continue;
+
+        let folder = await new Promise((resolve, reject) => {
+            const sql = `SELECT id FROM folders WHERE name = ? AND parent_id = ? AND user_id = ?`;
+            db.get(sql, [part, currentParentId, userId], (err, row) => err ? reject(err) : resolve(row));
+        });
+
+        if (folder) {
+            currentParentId = folder.id;
+        } else {
+            const newFolder = await new Promise((resolve, reject) => {
+                const sql = `INSERT INTO folders (name, parent_id, user_id) VALUES (?, ?, ?)`;
+                db.run(sql, [part, currentParentId, userId], function(err) {
+                    if (err) return reject(err);
+                    resolve({ id: this.lastID });
+                });
+            });
+            currentParentId = newFolder.id;
+        }
+    }
+    return currentParentId;
+}
+
 module.exports = {
     createUser,
     findUserByName,
@@ -585,5 +611,6 @@ module.exports = {
     findFileInFolder,
     checkNameConflict,
     checkFolderConflict,
-    checkFullConflict // <-- 新增
+    checkFullConflict,
+    resolvePathToFolderId
 };

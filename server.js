@@ -15,7 +15,7 @@ const storageManager = require('./storage');
 const app = express();
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage, limits: { fileSize: 1000 * 1024 * 1024 } });
-const PORT = process.env.PORT || 8100;
+const PORT = process.env.PORT || 25800;
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-strong-random-secret-here-please-change',
@@ -218,6 +218,7 @@ app.post('/api/admin/delete-user', requireAdmin, async (req, res) => {
     }
 });
 
+// --- *** 路由修正 (核心修正) *** ---
 app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, async (req, res) => {
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ success: false, message: '没有选择文件' });
@@ -226,26 +227,17 @@ app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, as
     const initialFolderId = parseInt(req.body.folderId, 10);
     const userId = req.session.userId;
     const storage = storageManager.getStorage();
-    
-    // --- *** 核心修正 Start *** ---
     let relativePaths = req.body.relativePaths;
+    const overwriteInfo = req.body.overwrite ? JSON.parse(req.body.overwrite) : [];
 
-    // 1. 确保 relativePaths 存在且为阵列
     if (!relativePaths) {
-        // 如果完全没有路径资讯，可能是简单的档案拖拽，使用原始档名作为备用
         relativePaths = req.files.map(file => file.originalname);
     } else if (!Array.isArray(relativePaths)) {
-        // 如果只上传了一个档案，它可能是一个字串，将其转换为阵列
         relativePaths = [relativePaths];
     }
-
-    // 2. 检查档案和路径数量是否匹配
     if (req.files.length !== relativePaths.length) {
-        // 如果数量不匹配，这是一个异常情况，记录下来并拒绝请求以防止资料错乱
-        console.error('Upload error: Mismatch between file count and path count.');
         return res.status(400).json({ success: false, message: '上传档案和路径资讯不匹配。' });
     }
-    // --- *** 核心修正 End *** ---
 
     const results = [];
     try {
@@ -256,13 +248,23 @@ app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, as
             const pathParts = (relativePath || file.originalname).split('/');
             const fileName = pathParts.pop() || file.originalname;
             const folderPathParts = pathParts;
-
+            
             const targetFolderId = await data.resolvePathToFolderId(initialFolderId, folderPathParts, userId);
             
-            const conflict = await data.findFileInFolder(fileName, targetFolderId, userId);
-            if (conflict) {
-                console.log(`档案 "${relativePath}" 已存在于目标资料夹，已略過。`);
-                continue; 
+            const isOverwrite = overwriteInfo.some(item => item.name === fileName);
+
+            if (isOverwrite) {
+                const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
+                if (existingFile) {
+                    const filesToDelete = await data.getFilesByIds([existingFile.message_id], userId);
+                    await storage.remove(filesToDelete, userId);
+                }
+            } else {
+                 const conflict = await data.findFileInFolder(fileName, targetFolderId, userId);
+                 if (conflict) {
+                     console.log(`Skipping file "${relativePath}" because it exists and was not marked for overwrite.`);
+                     continue;
+                 }
             }
 
             const result = await storage.upload(file.buffer, fileName, file.mimetype, userId, targetFolderId, req.body.caption || '');
@@ -275,7 +277,6 @@ app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, as
     }
 });
 
-// --- *** 完整替换 *** ---
 app.post('/api/text-file', requireLogin, async (req, res) => {
     const { mode, fileId, folderId, fileName, content } = req.body;
     const userId = req.session.userId;
@@ -300,7 +301,7 @@ app.post('/api/text-file', requireLogin, async (req, res) => {
         } else if (mode === 'create' && folderId) {
              const conflict = await data.checkFullConflict(fileName, folderId, userId);
             if (conflict) {
-                return res.status(409).json({ success: false, message: '同目录下已存在同名档案或资料夹。' });
+                return res.status(409).json({ success: false, message: '同目录下已存在同名档案或资料夾。' });
             }
             result = await storage.upload(contentBuffer, fileName, 'text/plain', userId, folderId);
         } else {
@@ -328,20 +329,36 @@ app.get('/api/file-info/:id', requireLogin, async (req, res) => {
     }
 });
 
+// --- *** 路由修正 (核心修正) *** ---
 app.post('/api/check-existence', requireLogin, async (req, res) => {
-    const { fileNames, folderId } = req.body;
+    const { files: filesToCheck, folderId: initialFolderId } = req.body;
     const userId = req.session.userId;
-    if (!fileNames || !Array.isArray(fileNames) || !folderId) {
+
+    if (!filesToCheck || !Array.isArray(filesToCheck) || !initialFolderId) {
         return res.status(400).json({ success: false, message: '无效的请求参数。' });
     }
+
     const existenceChecks = await Promise.all(
-        fileNames.map(async (name) => {
-            const existingFile = await data.findFileInFolder(name, folderId, userId);
-            return { name, exists: !!existingFile, messageId: existingFile ? existingFile.message_id : null };
+        filesToCheck.map(async (fileInfo) => {
+            const { relativePath } = fileInfo;
+            const pathParts = (relativePath || '').split('/');
+            const fileName = pathParts.pop() || relativePath;
+            const folderPathParts = pathParts;
+
+            const targetFolderId = await data.findFolderByPath(initialFolderId, folderPathParts, userId);
+
+            if (targetFolderId === null) {
+                return { name: fileName, relativePath, exists: false, messageId: null };
+            }
+
+            const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
+            return { name: fileName, relativePath, exists: !!existingFile, messageId: existingFile ? existingFile.message_id : null };
         })
     );
+
     res.json({ success: true, files: existenceChecks });
 });
+
 
 app.post('/api/check-move-conflict', requireLogin, async (req, res) => {
     try {
@@ -385,10 +402,10 @@ app.get('/api/folder/:id', requireLogin, async (req, res) => {
         const contents = await data.getFolderContents(folderId, req.session.userId);
         const path = await data.getFolderPath(folderId, req.session.userId);
         res.json({ contents, path });
-    } catch (error) { res.status(500).json({ success: false, message: '读取资料夹内容失败。' }); }
+    } catch (error) { res.status(500).json({ success: false, message: '读取资料夾内容失败。' }); }
 });
 
-// --- *** 完整替换 *** ---
+
 app.post('/api/folder', requireLogin, async (req, res) => {
     const { name, parentId } = req.body;
     const userId = req.session.userId;

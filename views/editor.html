@@ -56,7 +56,8 @@
             border-radius: 5px;
             cursor: pointer;
             margin-left: 10px;
-            font-size: 14px;
+            font-size: 14px; /* 默认字体大小 */
+            transition: all 0.2s ease-in-out;
         }
         #saveBtn {
             background-color: var(--primary-color);
@@ -109,16 +110,16 @@
             .editor-actions {
                 width: 100%;
                 justify-content: space-between;
-                gap: 10px; /* 使用 gap 替代 margin 来控制间距 */
+                gap: 10px; 
             }
             .editor-actions button {
-                flex-grow: 1; /* 让按钮平分空间 */
-                margin: 0; /* 移除外边距 */
+                flex-grow: 1;
+                margin: 0;
                 padding: 10px 8px; /* 调整内边距使其更适合小屏幕 */
-                font-size: 14px; /* 确保字体大小一致 */
+                font-size: 14px; /* 明确为按钮设置较小的字体大小 */
             }
             #saveStatus {
-                 display: none; /* 在小屏幕上隐藏文字提示，节省空间 */
+                 display: none;
             }
             .editor-container {
                 padding: 5px;

@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const conflictModal = document.getElementById('conflictModal');
     const conflictFileName = document.getElementById('conflictFileName');
     const conflictOptions = document.getElementById('conflictOptions');
+    // --- *** 新增資料夾衝突對話框元素 *** ---
     const folderConflictModal = document.getElementById('folderConflictModal');
     const folderConflictName = document.getElementById('folderConflictName');
     const folderConflictOptions = document.getElementById('folderConflictOptions');
@@ -91,7 +92,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // --- *** 核心修正：將上傳邏輯獨立為一個函式 *** ---
     const performUpload = async (formData, isDrag = false) => {
         const progressBar = isDrag ? dragUploadProgressBar : document.getElementById('progressBar');
         const progressArea = isDrag ? dragUploadProgressArea : document.getElementById('progressArea');
@@ -116,7 +116,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     uploadModal.style.display = 'none';
                 }
                 showNotification('上传成功！', 'success');
-                // 清空 input 的值
                 fileInput.value = '';
                 folderInput.value = '';
                 loadFolderContents(currentFolderId);
@@ -130,7 +129,70 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => { progressArea.style.display = 'none'; }, 2000);
         }
     };
+    
+    // --- *** 核心修正：將包含衝突檢查的上傳邏輯重新抽出 *** ---
+    const uploadFiles = async (files, targetFolderId, isDrag = false) => {
+        if (files.length === 0) return;
+    
+        const oversizedFiles = Array.from(files).filter(file => file.size > MAX_TELEGRAM_SIZE);
+        if (oversizedFiles.length > 0) {
+            const fileNames = oversizedFiles.map(f => `"${f.name}"`).join(', ');
+            showNotification(`档案 ${fileNames} 过大，超过 ${formatBytes(MAX_TELEGRAM_SIZE)} 的限制。`, 'error', !isDrag ? uploadNotificationArea : null);
+            return;
+        }
+    
+        // 僅檢查檔案，因為資料夾結構由後端處理
+        let existenceData = [];
+        const fileObjects = Array.from(files).filter(f => f.name); // 過濾掉奇怪的空項目
+        const fileNames = fileObjects.map(f => {
+            const pathParts = (f.webkitRelativePath || f.name).split('/');
+            return pathParts[pathParts.length - 1]; // 只取檔名
+        });
 
+        try {
+            const res = await axios.post('/api/check-existence', { fileNames, folderId: targetFolderId });
+            existenceData = res.data.files;
+        } catch (error) {
+            showNotification('检查档案是否存在时出错。', 'error', !isDrag ? null : uploadNotificationArea);
+            return;
+        }
+    
+        const filesToUpload = [];
+        const filesToOverwrite = [];
+    
+        for (const file of fileObjects) {
+             const fileName = (file.webkitRelativePath || file.name).split('/').pop();
+            const existing = existenceData.find(f => f.name === fileName && f.exists);
+            if (existing) {
+                if (confirm(`档案 "${fileName}" 已存在于目标资料夹。您要覆盖它吗？`)) {
+                    filesToOverwrite.push({ name: fileName, messageId: existing.messageId });
+                    filesToUpload.push(file);
+                }
+            } else {
+                filesToUpload.push(file);
+            }
+        }
+    
+        if (filesToUpload.length === 0) {
+            showNotification('已取消，没有档案被上传。', 'info', !isDrag ? uploadNotificationArea : null);
+            return;
+        }
+    
+        const formData = new FormData();
+        filesToUpload.forEach(file => {
+            formData.append('files', file);
+            formData.append('relativePaths', file.webkitRelativePath || file.name);
+        });
+        formData.append('folderId', targetFolderId);
+        formData.append('overwrite', JSON.stringify(filesToOverwrite));
+    
+        const captionInput = document.getElementById('uploadCaption');
+        if (captionInput && captionInput.value && !isDrag) {
+            formData.append('caption', captionInput.value);
+        }
+        
+        await performUpload(formData, isDrag);
+    };
 
     const loadFolderContents = async (folderId) => {
         try {
@@ -432,34 +494,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (uploadForm) {
-        uploadForm.addEventListener('submit', async (e) => {
+        uploadForm.addEventListener('submit', (e) => {
             e.preventDefault();
-
             const filesToProcess = folderInput.files.length > 0 ? folderInput.files : fileInput.files;
-            if (filesToProcess.length === 0) {
-                showNotification('请选择档案或资料夹。', 'error', uploadNotificationArea);
-                return;
-            }
-            
             const targetFolderId = folderSelect.value;
-            const formData = new FormData();
-            formData.append('folderId', targetFolderId);
-
-            for (const file of filesToProcess) {
-                formData.append('files', file);
-                formData.append('relativePaths', file.webkitRelativePath || file.name);
-            }
-
-            const captionInput = document.getElementById('uploadCaption');
-            if (captionInput && captionInput.value) {
-                formData.append('caption', captionInput.value);
-            }
-
-            await performUpload(formData, false);
+            uploadFiles(Array.from(filesToProcess), targetFolderId, false);
         });
     }
     
-    // --- *** 核心修正：更新拖拽上传逻辑 *** ---
     if (dropZone) {
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, (e) => {
@@ -476,9 +518,9 @@ document.addEventListener('DOMContentLoaded', () => {
             dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'));
         });
 
-        dropZone.addEventListener('drop', async (e) => {
+        dropZone.addEventListener('drop', (e) => {
             const files = Array.from(e.dataTransfer.files);
-            let hasFolder = false;
+             let hasFolder = false;
             if (e.dataTransfer.items) {
                 for(let i=0; i<e.dataTransfer.items.length; i++) {
                     const item = e.dataTransfer.items[i];
@@ -490,18 +532,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (hasFolder) {
-                showNotification('不支援拖拽资料夹上传，请使用上传按钮选择资料夹。', 'error');
+                showNotification('不支援拖拽资料夹上传，请使用上传按钮选择资料夾。', 'error');
                 return;
             }
-
             if (files.length > 0) {
-                const formData = new FormData();
-                formData.append('folderId', currentFolderId);
-                files.forEach(file => {
-                    formData.append('files', file);
-                    formData.append('relativePaths', file.name); // 拖拽单个文件时，相对路径就是其档名
-                });
-                await performUpload(formData, true);
+                uploadFiles(files, currentFolderId, true);
             }
         });
     }
@@ -736,7 +771,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async () => {
             if (selectedItems.size === 0) return;
-            if (!confirm(`确定要删除这 ${selectedItems.size} 个项目吗？\n注意：删除资料夹将会一并删除其所有内容！`)) return;
+            if (!confirm(`确定要删除这 ${selectedItems.size} 个项目吗？\n注意：删除资料夾将会一并删除其所有内容！`)) return;
             const filesToDelete = [], foldersToDelete = [];
             selectedItems.forEach((item, id) => {
                 if (item.type === 'file') filesToDelete.push(parseInt(id));

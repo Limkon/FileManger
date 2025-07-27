@@ -210,6 +210,26 @@ function findFolderByName(name, parentId, userId) {
     });
 }
 
+// --- *** 新增函式 (核心修正) *** ---
+async function findFolderByPath(startFolderId, pathParts, userId) {
+    let currentParentId = startFolderId;
+    for (const part of pathParts) {
+        if (!part) continue;
+        const folder = await new Promise((resolve, reject) => {
+            const sql = `SELECT id FROM folders WHERE name = ? AND parent_id = ? AND user_id = ?`;
+            db.get(sql, [part, currentParentId, userId], (err, row) => err ? reject(err) : resolve(row));
+        });
+
+        if (folder) {
+            currentParentId = folder.id;
+        } else {
+            return null; // 如果任何路徑部分不存在，則回傳 null
+        }
+    }
+    return currentParentId;
+}
+
+
 function getAllFolders(userId) {
     return new Promise((resolve, reject) => {
         const sql = "SELECT id, name, parent_id FROM folders WHERE user_id = ? ORDER BY parent_id, name ASC";
@@ -509,7 +529,6 @@ function checkNameConflict(itemNames, targetFolderId, userId) {
     });
 }
 
-// --- *** 新增函式 *** ---
 function checkFullConflict(name, folderId, userId) {
     return new Promise((resolve, reject) => {
         const sql = `
@@ -612,5 +631,6 @@ module.exports = {
     checkNameConflict,
     checkFolderConflict,
     checkFullConflict,
-    resolvePathToFolderId
+    resolvePathToFolderId,
+    findFolderByPath // <-- 導出新函式
 };

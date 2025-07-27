@@ -132,13 +132,15 @@ body {
 .list-icon .fa-folder { color: #ffc107; }
 .list-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-size, .list-date { width: 150px; text-align: right; color: #6c757d; font-size: 0.9em; flex-shrink: 0; }
+
+/* --- 浮动工具栏 --- */
 .action-bar {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
   width: 90%; max-width: 700px; background-color: #212529; color: white;
   border-radius: 12px; padding: 10px 15px; 
   display: flex; 
   align-items: center; 
-  gap: 15px;
+  gap: 10px;
   box-shadow: 0 -4px 15px rgba(0,0,0,0.2);
   transition: all 0.3s ease-in-out; 
   z-index: 1000; 
@@ -149,20 +151,10 @@ body {
     align-items: center;
     flex-grow: 1;
     gap: 15px;
-    min-width: 0; /* Important for flexbox ellipsis */
+    min-width: 0; 
 }
-.action-bar-top-row {
-    display: flex;
-    align-items: center;
-    flex-grow: 1;
-    min-width: 0;
-}
-.action-bar-info-left {
-    display: flex;
-    align-items: center;
-    flex-grow: 1;
-    overflow: hidden;
-}
+.action-bar-top-row { display: flex; align-items: center; flex-grow: 1; min-width: 0; }
+.action-bar-info-left { display: flex; align-items: center; flex-grow: 1; overflow: hidden; }
 .action-bar #selectAllBtn { background: #495057; color: white; border: none; padding: 8px 12px; margin-right: 15px; border-radius: 5px; cursor: pointer; flex-shrink: 0; }
 .action-bar #selectionCount { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .action-bar .actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: nowrap; }
@@ -176,7 +168,7 @@ body {
 
 #collapseBtn { 
     background: none; border: none; color: #adb5bd; cursor: pointer;
-    padding: 8px; line-height: 1; font-size: 18px; flex-shrink: 0;
+    padding: 8px; line-height: 1; font-size: 18px; 
 }
 #collapseBtn:hover { color: white; }
 
@@ -306,21 +298,22 @@ body {
         flex-wrap: wrap; 
         gap: 10px;
     }
-    .action-bar-content, .action-bar-top-row {
+    .action-bar .action-bar-content {
         flex-basis: 100%;
-        width: 100%;
+        order: 1;
+        flex-wrap: wrap;
+        gap: 10px;
     }
     .action-bar-top-row {
+        flex-basis: 100%;
+        display: flex;
         justify-content: space-between;
-        order: 1; /* 第一行 */
+        align-items: center;
     }
     .action-bar .actions {
-        order: 2; /* 第二行 */
-        flex-wrap: wrap;
+        flex-basis: 100%;
         justify-content: center;
-    }
-    .action-bar-info-left {
-        gap: 10px;
+        flex-wrap: wrap;
     }
     .action-bar .actions button,
     .action-bar #selectAllBtn {
@@ -328,7 +321,7 @@ body {
         font-size: 12px;
     }
     .action-bar #selectionCount { font-size: 12px; }
-    .action-bar #collapseBtn { padding: 8px; font-size: 12px; margin-left: 0; }
+    .action-bar #collapseBtn { order: 2; padding: 8px; font-size: 12px; }
     .action-bar .actions button .button-text, .main-header .upload-link-btn .button-text {
         display: none;
     }

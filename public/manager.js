@@ -60,9 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let isSearchMode = false;
     const MAX_TELEGRAM_SIZE = 50 * 1024 * 1024;
     let foldersLoaded = false;
-    let currentView = 'grid'; // 'grid' or 'list'
+    let currentView = 'grid';
 
-    // --- 辅助函式 ---
     const formatBytes = (bytes, decimals = 2) => {
         if (!bytes || bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -202,7 +201,6 @@ document.addEventListener('DOMContentLoaded', () => {
             currentFolderId = folderId;
             const res = await axios.get(`/api/folder/${folderId}`);
             currentFolderContents = res.data.contents;
-            // 清理已不存在的选择项
             const currentIds = new Set([...res.data.contents.folders.map(f => String(f.id)), ...res.data.contents.files.map(f => String(f.id))]);
             selectedItems.forEach((_, key) => {
                 if (!currentIds.has(key)) {
@@ -432,6 +430,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const checkScreenWidthAndCollapse = () => {
+        if (window.innerWidth <= 768) {
+            if (actionBar && !actionBar.classList.contains('collapsed')) {
+                actionBar.classList.add('collapsed');
+                const icon = collapseBtn.querySelector('i');
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+                collapseBtn.title = "展开";
+            }
+        } else {
+            if (actionBar && actionBar.classList.contains('collapsed')) {
+                 actionBar.classList.remove('collapsed');
+                 const icon = collapseBtn.querySelector('i');
+                 icon.classList.remove('fa-chevron-up');
+                 icon.classList.add('fa-chevron-down');
+                 collapseBtn.title = "收起";
+            }
+        }
+    };
+
+    // --- 事件监听 ---
     if (logoutBtn) {
         logoutBtn.addEventListener('click', () => {
             window.location.href = '/logout';
@@ -468,16 +487,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    const checkScreenWidthAndCollapse = () => {
-        if (window.innerWidth <= 768 && actionBar && !actionBar.classList.contains('collapsed')) {
-            actionBar.classList.add('collapsed');
-            const icon = collapseBtn.querySelector('i');
-            icon.classList.remove('fa-chevron-down');
-            icon.classList.add('fa-chevron-up');
-            collapseBtn.title = "展开";
-        }
-    };
-
     if (collapseBtn) {
         collapseBtn.addEventListener('click', () => {
             actionBar.classList.toggle('collapsed');
@@ -1082,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', () => {
             folderId = 1; 
         }
         loadFolderContents(folderId);
-        // 在這裡也執行一次螢幕寬度檢查
         checkScreenWidthAndCollapse();
+        window.addEventListener('resize', checkScreenWidthAndCollapse);
     }
 });

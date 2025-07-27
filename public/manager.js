@@ -518,36 +518,64 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function handleFolderUpload(files, folderName) {
-        const parentId = folderSelect.value;
-        try {
-            const res = await axios.post('/api/folder', { name: folderName, parentId });
-            const targetFolderId = res.data.id;
-            
-            foldersLoaded = false; 
-
-            await uploadFiles(Array.from(files), targetFolderId, false);
-
-        } catch (error) {
-            showNotification('处理资料夾上传失败：' + (error.response?.data?.message || '伺服器错误'), 'error', uploadNotificationArea);
-        }
-    }
-
     if (uploadForm) {
-        uploadForm.addEventListener('submit', (e) => {
+        uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-
-            const files = fileInput.files;
-            const folderFiles = folderInput.files;
-
-            if (folderFiles.length > 0) {
-                const folderName = folderFiles[0].webkitRelativePath.split('/')[0];
-                handleFolderUpload(folderFiles, folderName);
-            } else if (files.length > 0) {
-                const targetFolderId = folderSelect.value;
-                uploadFiles(Array.from(files), targetFolderId, false);
-            } else {
+    
+            const filesToProcess = folderInput.files.length > 0 ? folderInput.files : fileInput.files;
+            if (filesToProcess.length === 0) {
                 showNotification('请选择档案或资料夹。', 'error', uploadNotificationArea);
+                return;
+            }
+            
+            const targetFolderId = folderSelect.value;
+            const formData = new FormData();
+            formData.append('folderId', targetFolderId);
+    
+            // 關鍵改動：為每個檔案附加其相對路徑
+            for (const file of filesToProcess) {
+                formData.append('files', file);
+                // 如果是資料夾上傳，附加相對路徑；如果是單檔上傳，則附加檔名
+                formData.append('relativePaths', file.webkitRelativePath || file.name);
+            }
+    
+            const captionInput = document.getElementById('uploadCaption');
+            if (captionInput && captionInput.value) {
+                formData.append('caption', captionInput.value);
+            }
+    
+            // 接下來的程式碼與 uploadFiles 函式大部分相同，我們直接將其整合於此
+            const progressBar = document.getElementById('progressBar');
+            const progressArea = document.getElementById('progressArea');
+    
+            progressArea.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            uploadSubmitBtn.disabled = true;
+    
+            try {
+                const res = await axios.post('/upload', formData, {
+                    onUploadProgress: p => {
+                        const percent = Math.round((p.loaded * 100) / p.total);
+                        progressBar.style.width = percent + '%';
+                        progressBar.textContent = percent + '%';
+                    }
+                });
+                if (res.data.success) {
+                    uploadModal.style.display = 'none';
+                    showNotification('上传成功！', 'success');
+                    // 清空 input 的值，以便下次可以選擇同一個資料夾
+                    fileInput.value = '';
+                    folderInput.value = '';
+                    loadFolderContents(currentFolderId);
+                } else {
+                    showNotification('上传失败', 'error', uploadNotificationArea);
+                }
+            } catch (error) {
+                showNotification('上传失败: ' + (error.response?.data?.message || '伺服器错误'), 'error', uploadNotificationArea);
+            } finally {
+                uploadSubmitBtn.disabled = false;
+                setTimeout(() => { progressArea.style.display = 'none'; }, 2000);
             }
         });
     }
@@ -661,14 +689,12 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('popstate', () => {
         if (document.getElementById('itemGrid')) {
             const pathParts = window.location.pathname.split('/');
-            const folderId = parseInt(pathParts[pathParts.length - 1], 10);
-            if (!isNaN(folderId)) {
-                loadFolderContents(folderId);
-            } else {
-                if(window.location.pathname === '/') {
-                    loadFolderContents(1); 
-                }
+            const lastPart = pathParts.filter(p => p).pop();
+            let folderId = parseInt(lastPart, 10);
+            if (isNaN(folderId)) {
+                folderId = 1; 
             }
+            loadFolderContents(folderId);
         }
     });
     if (createFolderBtn) {

@@ -195,7 +195,7 @@ app.post('/upload', requireLogin, (req, res, next) => {
     const initialFolderId = parseInt(req.body.folderId, 10);
     const userId = req.session.userId;
     const storage = storageManager.getStorage();
-    const overwritePaths = req.body.overwritePaths ? JSON.parse(req.body.overwritePaths) : [];
+    const overwriteInfo = req.body.overwrite ? JSON.parse(req.body.overwrite) : {};
     let relativePaths = req.body.relativePaths;
 
     // 清理函式，确保即使请求中断也能尝试清理
@@ -228,27 +228,25 @@ app.post('/upload', requireLogin, (req, res, next) => {
         for (let i = 0; i < req.files.length; i++) {
             const file = req.files[i];
             const relativePath = relativePaths[i];
+            const overwriteAction = overwriteInfo[relativePath];
 
             const uploadTask = async () => {
                 const pathParts = (relativePath || file.originalname).split('/');
                 const fileName = pathParts.pop() || file.originalname;
                 const folderPathParts = pathParts;
-                const isOverwrite = overwritePaths.includes(relativePath);
                 
                 const targetFolderId = await data.resolvePathToFolderId(initialFolderId, folderPathParts, userId);
                 
-                if (isOverwrite) {
-                    const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
-                    if (existingFile) {
+                const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
+
+                if (existingFile) {
+                    if (overwriteAction === 'overwrite') {
                         const filesToDelete = await data.getFilesByIds([existingFile.message_id], userId);
                         await storage.remove(filesToDelete, userId);
+                    } else if (overwriteAction === 'skip') {
+                        console.log(`跳过文件 "${relativePath}" 因为它已存在且被标记为跳过。`);
+                        return; // 跳过此文件
                     }
-                } else {
-                     const conflict = await data.findFileInFolder(fileName, targetFolderId, userId);
-                     if (conflict) {
-                         console.log(`跳过文件 "${relativePath}" 因为它已存在且未被标记为覆盖。`);
-                         return;
-                     }
                 }
                 
                 const readStream = fs.createReadStream(file.path);
@@ -272,6 +270,7 @@ app.post('/upload', requireLogin, (req, res, next) => {
         cleanupFiles();
     }
 });
+
 
 // ... (此处省略其他未变动的 API 路由, 以保持简洁)
 app.get('/local-files/:userId/:fileId', requireLogin, (req, res) => {
@@ -751,7 +750,7 @@ app.get('/file/content/:message_id', requireLogin, async (req, res) => {
                 res.status(404).send('本地文件不存在');
             }
         } else if (fileInfo.storage_type === 'webdav') {
-            const stream = await storage.stream(fileInfo.file_id, req.session.userId);
+            const stream = await storage.stream(fileInfo.file_id, fileInfo.user_id);
             stream.on('error', (err) => {
                 console.error('WebDAV 流错误:', err);
                 if (!res.headersSent) {

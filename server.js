@@ -572,7 +572,6 @@ app.get('/thumbnail/:message_id', requireLogin, async (req, res) => {
             if (link) return res.redirect(link);
         }
         
-        // 對於 local 和 webdav，都回傳預設圖示
         const placeholder = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
         res.writeHead(200, { 'Content-Type': 'image/gif', 'Content-Length': placeholder.length });
         res.end(placeholder);
@@ -638,11 +637,22 @@ app.get('/file/content/:message_id', requireLogin, async (req, res) => {
                 res.status(404).send('本地档案不存在');
             }
         } else if (fileInfo.storage_type === 'webdav') {
+            // 關鍵修正：為 WebDAV 串流新增錯誤處理
             const stream = await storage.stream(fileInfo.file_id, req.session.userId);
+            stream.on('error', (err) => {
+                console.error('WebDAV stream error:', err);
+                if (!res.headersSent) {
+                    res.status(500).send('读取WebDAV文件流时发生错误');
+                }
+            });
             stream.pipe(res);
         }
-    } catch (error) { res.status(500).send('无法获取文件内容'); }
+    } catch (error) { 
+        console.error("File content error:", error);
+        res.status(500).send('无法获取文件内容'); 
+    }
 });
+
 
 app.post('/api/download-archive', requireLogin, async (req, res) => {
     try {

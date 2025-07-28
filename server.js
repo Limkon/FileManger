@@ -218,6 +218,44 @@ app.post('/api/admin/delete-user', requireAdmin, async (req, res) => {
     }
 });
 
+app.get('/api/admin/webdav', requireAdmin, (req, res) => {
+    const config = storageManager.readConfig();
+    res.json(config.webdav || []);
+});
+
+app.post('/api/admin/webdav', requireAdmin, (req, res) => {
+    const { userId, url, username, password } = req.body;
+    if (!userId || !url || !username || !password) {
+        return res.status(400).json({ success: false, message: '缺少必要參數' });
+    }
+    const config = storageManager.readConfig();
+    const existingIndex = config.webdav.findIndex(c => c.userId === parseInt(userId));
+
+    if (existingIndex > -1) {
+        config.webdav[existingIndex] = { userId: parseInt(userId), url, username, password };
+    } else {
+        config.webdav.push({ userId: parseInt(userId), url, username, password });
+    }
+
+    if (storageManager.writeConfig(config)) {
+        res.json({ success: true, message: 'WebDAV 設定已儲存' });
+    } else {
+        res.status(500).json({ success: false, message: '寫入設定失敗' });
+    }
+});
+
+app.delete('/api/admin/webdav/:userId', requireAdmin, (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const config = storageManager.readConfig();
+    config.webdav = config.webdav.filter(c => c.userId !== userId);
+    
+    if (storageManager.writeConfig(config)) {
+        res.json({ success: true, message: 'WebDAV 設定已刪除' });
+    } else {
+        res.status(500).json({ success: false, message: '刪除設定失敗' });
+    }
+});
+
 app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, async (req, res) => {
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ success: false, message: '没有选择文件' });

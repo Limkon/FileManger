@@ -223,7 +223,6 @@ app.post('/upload', requireLogin, (req, res, next) => {
     const results = [];
     const uploadPromises = [];
 
-    // --- 核心优化：在 try/catch/finally 结构中执行所有操作 ---
     try {
         for (let i = 0; i < req.files.length; i++) {
             const file = req.files[i];
@@ -241,11 +240,11 @@ app.post('/upload', requireLogin, (req, res, next) => {
 
                 if (existingFile) {
                     if (overwriteAction === 'overwrite') {
-                        const filesToDelete = await data.getFilesByIds([existingFile.message_id], userId);
+                        const filesToDelete = await data.getFilesByIds([existingFile.id], userId);
                         await storage.remove(filesToDelete, userId);
-                    } else if (overwriteAction === 'skip') {
-                        console.log(`跳过文件 "${relativePath}" 因为它已存在且被标记为跳过。`);
-                        return; // 跳过此文件
+                    } else {
+                        console.log(`跳过文件 "${relativePath}" 因为它已存在且未被标记为覆盖。`);
+                        return;
                     }
                 }
                 
@@ -266,13 +265,10 @@ app.post('/upload', requireLogin, (req, res, next) => {
             res.status(500).json({ success: false, message: '处理上传时发生错误: ' + error.message });
         }
     } finally {
-        // 确保所有临时文件在请求结束时被清理
         cleanupFiles();
     }
 });
 
-
-// ... (此处省略其他未变动的 API 路由, 以保持简洁)
 app.get('/local-files/:userId/:fileId', requireLogin, (req, res) => {
     if (String(req.params.userId) !== String(req.session.userId) && !req.session.isAdmin) {
         return res.status(403).send("权限不足");
@@ -476,7 +472,6 @@ app.post('/api/text-file', requireLogin, async (req, res) => {
     }
 });
 
-
 app.get('/api/file-info/:id', requireLogin, async (req, res) => {
     try {
         const fileId = parseInt(req.params.id, 10);
@@ -507,14 +502,14 @@ app.post('/api/check-existence', requireLogin, async (req, res) => {
                 const fileName = pathParts.pop() || relativePath;
                 const folderPathParts = pathParts;
 
-                const targetFolderId = await data.findFolderByPath(initialFolderId, folderPathParts, userId);
+                const targetFolderId = await data.resolvePathToFolderId(initialFolderId, folderPathParts, userId);
                 
                 if (targetFolderId === null) {
-                    return { name: fileName, relativePath, exists: false, messageId: null };
+                    return { name: fileName, relativePath, exists: false, id: null };
                 }
 
                 const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
-                return { name: fileName, relativePath, exists: !!existingFile, messageId: existingFile ? existingFile.message_id : null };
+                return { name: fileName, relativePath, exists: !!existingFile, id: existingFile ? existingFile.id : null };
             })
         );
         res.json({ success: true, files: existenceChecks });
@@ -524,7 +519,6 @@ app.post('/api/check-existence', requireLogin, async (req, res) => {
     }
 });
 
-
 app.post('/api/check-move-conflict', requireLogin, async (req, res) => {
     try {
         const { itemIds, targetFolderId } = req.body;
@@ -533,16 +527,11 @@ app.post('/api/check-move-conflict', requireLogin, async (req, res) => {
             return res.status(400).json({ success: false, message: '无效的请求参数。' });
         }
 
-        const itemsToMove = await data.getItemsByIds(itemIds, userId);
-        const fileNamesToMove = itemsToMove.filter(i => i.type === 'file').map(f => f.name);
-        const folderNamesToMove = itemsToMove.filter(i => i.type === 'folder').map(f => f.name);
+        const fileConflicts = await data.findAllMoveConflicts(itemIds, targetFolderId, userId);
 
-        const fileConflicts = await data.checkNameConflict(fileNamesToMove, targetFolderId, userId);
-        const folderConflicts = await data.checkFolderConflict(folderNamesToMove, targetFolderId, userId);
-
-        res.json({ success: true, fileConflicts, folderConflicts });
+        res.json({ success: true, fileConflicts });
     } catch (error) {
-        console.error("冲突检查错误:", error);
+        console.error("移动冲突检查错误:", error);
         res.status(500).json({ success: false, message: '检查名称冲突时出错。' });
     }
 });
@@ -570,7 +559,6 @@ app.get('/api/folder/:id', requireLogin, async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: '读取文件夹内容失败。' }); }
 });
 
-
 app.post('/api/folder', requireLogin, async (req, res) => {
     const { name, parentId } = req.body;
     const userId = req.session.userId;
@@ -591,7 +579,6 @@ app.post('/api/folder', requireLogin, async (req, res) => {
     }
 });
 
-
 app.get('/api/folders', requireLogin, async (req, res) => {
     const folders = await data.getAllFolders(req.session.userId);
     res.json(folders);
@@ -599,17 +586,16 @@ app.get('/api/folders', requireLogin, async (req, res) => {
 
 app.post('/api/move', requireLogin, async (req, res) => {
     try {
-        const { itemIds, targetFolderId, overwriteList = [], mergeList = [] } = req.body;
+        const { itemIds, targetFolderId, overwriteList = [] } = req.body;
         const userId = req.session.userId;
+        
         if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0 || !targetFolderId) {
             return res.status(400).json({ success: false, message: '无效的请求参数。' });
         }
         
-        const items = await data.getItemsByIds(itemIds, userId);
+        const overwriteSet = new Set(overwriteList);
         
-        for (const item of items) {
-            await data.moveItem(item.id, item.type, targetFolderId, userId, { overwriteList, mergeList });
-        }
+        await data.moveItems(itemIds, targetFolderId, userId, overwriteSet);
         
         res.json({ success: true, message: "移动成功" });
     } catch (error) { 
@@ -617,7 +603,6 @@ app.post('/api/move', requireLogin, async (req, res) => {
         res.status(500).json({ success: false, message: '移动失败：' + error.message }); 
     }
 });
-
 
 app.post('/api/folder/delete', requireLogin, async (req, res) => {
     const { folderId } = req.body;
@@ -765,7 +750,6 @@ app.get('/file/content/:message_id', requireLogin, async (req, res) => {
     }
 });
 
-
 app.post('/api/download-archive', requireLogin, async (req, res) => {
     try {
         const { messageIds = [], folderIds = [] } = req.body;
@@ -815,7 +799,6 @@ app.post('/api/download-archive', requireLogin, async (req, res) => {
         res.status(500).send('压缩文件时发生错误');
     }
 });
-
 
 app.post('/share', requireLogin, async (req, res) => {
     try {
@@ -986,6 +969,5 @@ app.get('/share/download/:folderToken/:fileId', async (req, res) => {
         res.status(500).send('下载失败');
     }
 });
-
 
 app.listen(PORT, () => console.log(`✅ 服务器已在 http://localhost:${PORT} 上运行`));

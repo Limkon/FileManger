@@ -132,8 +132,9 @@
             
             async function loadWebdavSettings() {
                 try {
+                    // 修正：呼叫 all-users API
                     const [usersRes, webdavRes] = await Promise.all([
-                        axios.get('/api/admin/users'),
+                        axios.get('/api/admin/all-users'),
                         axios.get('/api/admin/webdav')
                     ]);
                     
@@ -255,7 +256,7 @@
                     newPasswordInput.value = '';
                     alert('使用者新增成功！');
                     loadUsers();
-                    loadWebdavSettings(); // 新增使用者后，重新加载 WebDAV 设置
+                    loadWebdavSettings();
                 } catch (error) {
                     alert('新增失败：' + (error.response?.data?.message || '伺服器错误'));
                 }
@@ -286,7 +287,7 @@
                             await axios.post('/api/admin/delete-user', { userId });
                             alert(`使用者 "${username}" 已被删除。`);
                             loadUsers();
-                            loadWebdavSettings(); // 删除使用者后，重新加载 WebDAV 设置
+                            loadWebdavSettings();
                         } catch (error) {
                              alert('删除失败：' + (error.response?.data?.message || '伺服器错误'));
                         }

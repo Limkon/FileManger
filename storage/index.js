@@ -1,6 +1,7 @@
 // storage/index.js
 const telegramStorage = require('./telegram');
 const localStorage = require('./local');
+const webdavStorage = require('./webdav'); // 新增
 const fs = require('fs');
 const path = require('path');
 
@@ -10,12 +11,14 @@ function readConfig() {
     try {
         if (fs.existsSync(CONFIG_FILE)) {
             const rawData = fs.readFileSync(CONFIG_FILE);
-            return JSON.parse(rawData);
+            const config = JSON.parse(rawData);
+            if (!config.webdav) config.webdav = []; // 確保 webdav 設定存在
+            return config;
         }
     } catch (error) {
-        console.error("读取设定档失败:", error);
+        console.error("讀取設定檔失敗:", error);
     }
-    return { storageMode: 'telegram' }; // 预设值
+    return { storageMode: 'telegram', webdav: [] }; // 預設值
 }
 
 function writeConfig(config) {
@@ -23,7 +26,7 @@ function writeConfig(config) {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
         return true;
     } catch (error) {
-        console.error("写入设定档失败:", error);
+        console.error("寫入設定檔失敗:", error);
         return false;
     }
 }
@@ -35,11 +38,14 @@ function getStorage() {
     if (config.storageMode === 'local') {
         return localStorage;
     }
+    if (config.storageMode === 'webdav') { // 新增
+        return webdavStorage;
+    }
     return telegramStorage;
 }
 
 function setStorageMode(mode) {
-    if (mode === 'local' || mode === 'telegram') {
+    if (['local', 'telegram', 'webdav'].includes(mode)) { // 新增
         config.storageMode = mode;
         return writeConfig(config);
     }
@@ -49,5 +55,6 @@ function setStorageMode(mode) {
 module.exports = {
     getStorage,
     setStorageMode,
-    readConfig
+    readConfig,
+    writeConfig // 匯出 writeConfig
 };

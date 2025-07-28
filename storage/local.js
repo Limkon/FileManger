@@ -1,60 +1,57 @@
-const fs = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 const data = require('../data.js');
-const crypto = require('crypto');
 
-const UPLOAD_DIR = path.join(__dirname, '..', 'data', 'uploads');
+const UPLOADS_DIR = path.join(__dirname, '..', 'data', 'uploads');
 
-async function setup() {
-    try {
-        await fs.mkdir(UPLOAD_DIR, { recursive: true });
-    } catch (e) {
-        console.error("无法建立上传目录:", e);
+async function upload(readStream, fileName, mimetype, userId, folderId, size) {
+    const userUploadsDir = path.join(UPLOADS_DIR, String(userId));
+    if (!fs.existsSync(userUploadsDir)) {
+        fs.mkdirSync(userUploadsDir, { recursive: true });
     }
-}
-setup();
 
-async function upload(fileBuffer, fileName, mimetype, userId, folderId) {
-    const userDir = path.join(UPLOAD_DIR, String(userId));
-    await fs.mkdir(userDir, { recursive: true });
-
-    const uniqueId = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
-    const filePath = path.join(userDir, uniqueId);
-
-    await fs.writeFile(filePath, fileBuffer);
-
+    // 使用 message_id 作為檔名以確保唯一性
     const messageId = Date.now() + Math.floor(Math.random() * 1000);
+    const finalFilePath = path.join(userUploadsDir, String(messageId));
+    
+    // 核心重構：使用 pipe 進行流式寫入
+    const writeStream = fs.createWriteStream(finalFilePath);
+    
+    await new Promise((resolve, reject) => {
+        readStream.pipe(writeStream);
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+        readStream.on('error', reject); // 確保也能捕捉讀取流的錯誤
+    });
 
     const dbResult = await data.addFile({
         message_id: messageId,
         fileName,
         mimetype,
-        size: fileBuffer.length,
-        file_id: filePath,
-        thumb_file_id: null,
+        size,
+        file_id: finalFilePath, // 儲存最終路徑
         date: Date.now(),
     }, folderId, userId, 'local');
 
-    return { success: true, message: '档案已储存至本地。', fileId: dbResult.fileId };
+    return { success: true, message: '檔案已上傳至本地。', fileId: dbResult.fileId };
 }
 
 async function remove(files, userId) {
-    const filePaths = files.map(f => f.file_id);
-    const messageIds = files.map(f => f.message_id);
-
-    for (const filePath of filePaths) {
+    for (const file of files) {
         try {
-            await fs.unlink(filePath);
-        } catch (e) {
-            console.warn(`删除本地档案失败: ${filePath}`, e.message);
+            if (fs.existsSync(file.file_id)) {
+                fs.unlinkSync(file.file_id);
+            }
+        } catch (error) {
+            console.warn(`刪除本地檔案失敗: ${file.file_id}`, error.message);
         }
     }
-    await data.deleteFilesByIds(messageIds, userId);
+    await data.deleteFilesByIds(files.map(f => f.message_id), userId);
     return { success: true };
 }
 
-async function getUrl(file_id, userId) {
-    return `/local-files/${userId}/${path.basename(file_id)}`;
+async function stream(file_id, userId) {
+    return fs.createReadStream(file_id);
 }
 
-module.exports = { upload, remove, getUrl, type: 'local' };
+module.exports = { upload, remove, stream, type: 'local' };

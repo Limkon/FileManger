@@ -24,6 +24,7 @@ npm install || { echo -e "${RED}錯誤：'npm install' 失敗。${NC}"; exit 1; 
 # 3. 修復安全漏洞
 echo -e "\n${YELLOW}[3/3] 正在修復 Multer 安全漏洞...${NC}"
 npm install multer@1.4.4-lts.1 > /dev/null 2>&1
+npm audit fix --force > /dev/null 2>&1
 
 echo -e "\n${GREEN}================================================================${NC}"
 echo -e "${GREEN}✅ 基礎安裝已成功完成！${NC}"

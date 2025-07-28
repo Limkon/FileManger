@@ -240,8 +240,10 @@ app.post('/upload', requireLogin, (req, res, next) => {
 
                 if (existingFile) {
                     if (overwriteAction === 'overwrite') {
-                        const filesToDelete = await data.getFilesByIds([existingFile.id], userId);
-                        await storage.remove(filesToDelete, userId);
+                        const filesToDelete = await data.getFilesByIds([existingFile.message_id], userId);
+                        if (filesToDelete.length > 0) {
+                           await storage.remove(filesToDelete, userId); // This will also delete from DB
+                        }
                     } else {
                         console.log(`跳过文件 "${relativePath}" 因为它已存在且未被标记为覆盖。`);
                         return;

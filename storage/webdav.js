@@ -1,11 +1,10 @@
 const { createClient } = require('webdav');
 const data = require('../data.js');
-const db = require('../database.js'); // 引入 database 以便查詢
+const db = require('../database.js');
 
 let clients = {};
 
 function getClient(userId) {
-    // 透過延遲載入來避免循環依賴
     const storageManager = require('./index'); 
     const config = storageManager.readConfig();
     const userWebdavConfig = config.webdav.find(c => c.userId === userId);
@@ -13,7 +12,6 @@ function getClient(userId) {
         throw new Error('找不到該使用者的 WebDAV 設定');
     }
 
-    // 如果設定有變更，重新建立客戶端連線
     const clientKey = `${userId}-${userWebdavConfig.url}-${userWebdavConfig.username}`;
     if (!clients[clientKey]) {
         clients[clientKey] = createClient(userWebdavConfig.url, {
@@ -25,7 +23,6 @@ function getClient(userId) {
 }
 
 async function getFolderPath(folderId, userId) {
-    // 修正：正確找到使用者的根目錄 ID
     const userRoot = await new Promise((resolve, reject) => {
         db.get("SELECT id FROM folders WHERE user_id = ? AND parent_id IS NULL", [userId], (err, row) => {
             if (err) return reject(err);
@@ -37,7 +34,6 @@ async function getFolderPath(folderId, userId) {
     if (folderId === userRoot.id) return '/';
     
     const pathParts = await data.getFolderPath(folderId, userId);
-    // 移除根目錄部分，因為 WebDAV 路徑是相對的
     return '/' + pathParts.slice(1).map(p => p.name).join('/');
 }
 
@@ -45,6 +41,18 @@ async function upload(fileBuffer, fileName, mimetype, userId, folderId) {
     const client = getClient(userId);
     const folderPath = await getFolderPath(folderId, userId);
     const remotePath = (folderPath === '/' ? '' : folderPath) + '/' + fileName;
+    
+    // 解決資料夾上傳問題：確保遠端目錄存在
+    if (folderPath && folderPath !== "/") {
+        try {
+            await client.createDirectory(folderPath, { recursive: true });
+        } catch (e) {
+            // 忽略目錄已存在的錯誤
+            if (e.response && (e.response.status !== 405 && e.response.status !== 501)) {
+                 throw e;
+            }
+        }
+    }
 
     const success = await client.putFileContents(remotePath, fileBuffer, { overwrite: true });
 
@@ -60,7 +68,7 @@ async function upload(fileBuffer, fileName, mimetype, userId, folderId) {
         fileName,
         mimetype,
         size: stat.size,
-        file_id: remotePath, // 儲存相對路徑
+        file_id: remotePath,
         date: new Date(stat.lastmod).getTime(),
     }, folderId, userId, 'webdav');
     
@@ -73,7 +81,6 @@ async function remove(files, userId) {
         try {
             await client.deleteFile(file.file_id);
         } catch (error) {
-            // 如果檔案在遠端不存在，也視為成功
             if (error.response && error.response.status !== 404) {
                  console.warn(`刪除 WebDAV 檔案失敗: ${file.file_id}`, error.message);
             }
@@ -83,9 +90,16 @@ async function remove(files, userId) {
     return { success: true };
 }
 
+// 解決下載和分享問題：新增 stream 方法
+async function stream(file_id, userId) {
+    const client = getClient(userId);
+    return client.createReadStream(file_id);
+}
+
+// getUrl 保持不變，但優先使用 stream
 async function getUrl(file_id, userId) {
     const client = getClient(userId);
     return client.getFileDownloadLink(file_id);
 }
 
-module.exports = { upload, remove, getUrl, type: 'webdav' };
+module.exports = { upload, remove, getUrl, stream, type: 'webdav' };

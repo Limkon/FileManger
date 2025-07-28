@@ -390,7 +390,7 @@ app.get('/api/search', requireLogin, async (req, res) => {
         const query = req.query.q;
         if (!query) return res.status(400).json({ success: false, message: '需要提供搜寻关键字。' });
         
-        const contents = await data.searchFiles(query, req.session.userId); 
+        const contents = await data.searchItems(query, req.session.userId); 
         
         const path = [{ id: null, name: `搜寻结果: "${query}"` }];
         res.json({ contents, path });
@@ -413,7 +413,7 @@ app.post('/api/folder', requireLogin, async (req, res) => {
     const { name, parentId } = req.body;
     const userId = req.session.userId;
     if (!name || !parentId) {
-        return res.status(400).json({ success: false, message: '缺少资料夹名称或父 ID。' });
+        return res.status(400).json({ success: false, message: '缺少资料夾名称或父 ID。' });
     }
     
     try {

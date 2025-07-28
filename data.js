@@ -62,17 +62,32 @@ function deleteUser(userId) {
 }
 
 
-// --- 档案搜寻 ---
-function searchFiles(query, userId) {
+// --- 檔案和資料夾搜尋 ---
+function searchItems(query, userId) {
     return new Promise((resolve, reject) => {
-        const sql = `SELECT *, message_id as id, fileName as name, 'file' as type
-                     FROM files
-                     WHERE fileName LIKE ? AND user_id = ?
-                     ORDER BY date DESC`;
         const searchQuery = `%${query}%`;
-        db.all(sql, [searchQuery, userId], (err, files) => {
+        const sqlFolders = `
+            SELECT id, name, parent_id, 'folder' as type
+            FROM folders
+            WHERE name LIKE ? AND user_id = ? AND parent_id IS NOT NULL
+            ORDER BY name ASC`;
+
+        const sqlFiles = `
+            SELECT *, message_id as id, fileName as name, 'file' as type
+            FROM files
+            WHERE fileName LIKE ? AND user_id = ?
+            ORDER BY date DESC`;
+
+        let contents = { folders: [], files: [] };
+
+        db.all(sqlFolders, [searchQuery, userId], (err, folders) => {
             if (err) return reject(err);
-            resolve({ folders: [], files: files.map(f => ({ ...f, message_id: f.id })) });
+            contents.folders = folders;
+            db.all(sqlFiles, [searchQuery, userId], (err, files) => {
+                if (err) return reject(err);
+                contents.files = files.map(f => ({ ...f, message_id: f.id }));
+                resolve(contents);
+            });
         });
     });
 }
@@ -601,7 +616,7 @@ module.exports = {
     changeUserPassword,
     listNormalUsers,
     deleteUser,
-    searchFiles,
+    searchItems,
     getFolderContents,
     getFilesRecursive,
     getFolderPath,

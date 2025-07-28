@@ -157,22 +157,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     
         const filesToUpload = [];
-        const pathsToOverwrite = [];
-    
-        for (const file of fileObjects) {
-            const relativePath = file.webkitRelativePath || file.name;
-            const existing = existenceData.find(f => f.relativePath === relativePath && f.exists);
-    
-            if (existing) {
-                if (confirm(`文件 "${existing.name}" 已存在于目标位置 (${existing.relativePath})。您要覆盖它吗？`)) {
-                    pathsToOverwrite.push(relativePath);
+        const overwriteInfo = {};
+        const conflicts = existenceData.filter(f => f.exists).map(f => f.relativePath);
+
+        if (conflicts.length > 0) {
+            const result = await handleConflict(conflicts);
+
+            if (result.action === 'abort') {
+                showNotification('上传操作已放弃。', 'info', !isDrag ? uploadNotificationArea : null);
+                return;
+            }
+
+            fileObjects.forEach(file => {
+                const relativePath = file.webkitRelativePath || file.name;
+                if (conflicts.includes(relativePath)) {
+                    if (result.overwrite[relativePath] === 'overwrite') {
+                        filesToUpload.push(file);
+                        overwriteInfo[relativePath] = 'overwrite';
+                    }
+                } else {
                     filesToUpload.push(file);
                 }
-            } else {
-                filesToUpload.push(file);
-            }
+            });
+        } else {
+            filesToUpload.push(...fileObjects);
         }
-    
+
         if (filesToUpload.length === 0) {
             showNotification('已取消，没有文件被上传。', 'info', !isDrag ? uploadNotificationArea : null);
             return;
@@ -184,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('relativePaths', file.webkitRelativePath || file.name);
         });
         formData.append('folderId', targetFolderId);
-        formData.append('overwritePaths', JSON.stringify(pathsToOverwrite));
+        formData.append('overwrite', JSON.stringify(overwriteInfo));
     
         const captionInput = document.getElementById('uploadCaption');
         if (captionInput && captionInput.value && !isDrag) {
@@ -895,13 +905,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function handleConflict(conflicts) {
-        let overwriteList = [];
+        let overwrite = {};
         let i = 0;
 
         function showNextConflict() {
             return new Promise((resolve) => {
                 if (i >= conflicts.length) {
-                    resolve({ action: 'finish', overwriteList });
+                    resolve({ action: 'finish', overwrite });
                     return;
                 }
 
@@ -914,17 +924,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     conflictModal.style.display = 'none';
                     if (action === 'overwrite') {
-                        overwriteList.push(conflicts[i]);
+                        overwrite[conflicts[i]] = 'overwrite';
                         i++;
                         resolve(showNextConflict());
                     } else if (action === 'overwrite_all') {
-                        overwriteList = conflicts;
-                        resolve({ action: 'finish', overwriteList });
+                        conflicts.forEach(c => overwrite[c] = 'overwrite');
+                        resolve({ action: 'finish', overwrite });
                     } else if (action === 'skip') {
+                        overwrite[conflicts[i]] = 'skip';
                         i++;
                         resolve(showNextConflict());
                     } else if (action === 'skip_all') {
-                        resolve({ action: 'finish', overwriteList: [] });
+                         conflicts.forEach(c => overwrite[c] = 'skip');
+                        resolve({ action: 'finish', overwrite });
                     } else if (action === 'abort') {
                         resolve({ action: 'abort' });
                     }

@@ -1,4 +1,4 @@
-# Telegram 档案管理器 (telegram-file-manager)
+# 网络档案管理器 (Netwrok-file-manager)
 
 一个功能强大且灵活的网页档案管理器。它使用 Express 和 Node.js 构建，并提供可插拔的储存后端，您可以选择将档案安全地储存在 **Telegram 频道**或**本地伺服器**上。
 

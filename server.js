@@ -8,6 +8,7 @@ const archiver = require('archiver');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
 const crypto = require('crypto');
+const { exec } = require('child_process'); // 引入 child_process 模組
 const db = require('./database.js'); 
 
 const data = require('./data.js');
@@ -15,7 +16,6 @@ const storageManager = require('./storage');
 
 const app = express();
 
-// --- 核心重构：设定磁盘暂存 ---
 const UPLOAD_TEMP_DIR = path.join(__dirname, 'data', 'tmp');
 if (!fs.existsSync(UPLOAD_TEMP_DIR)) {
     fs.mkdirSync(UPLOAD_TEMP_DIR, { recursive: true });
@@ -26,14 +26,12 @@ const diskStorage = multer.diskStorage({
         cb(null, UPLOAD_TEMP_DIR);
     },
     filename: (req, file, cb) => {
-        // 为暂存文件生成一个唯一的名称，以避免冲突
         const uniqueSuffix = crypto.randomBytes(8).toString('hex');
         cb(null, `${Date.now()}-${uniqueSuffix}`);
     }
 });
 
 const upload = multer({ storage: diskStorage, limits: { fileSize: 1000 * 1024 * 1024 } });
-// ------------------------------------
 
 const PORT = process.env.PORT || 8100;
 
@@ -70,6 +68,28 @@ function requireAdmin(req, res, next) {
         return next();
     }
     res.status(403).send('权限不足');
+}
+
+// --- 核心优化：磁盘空间检查函数 ---
+function getAvailableDiskSpace(pathToCheck, callback) {
+    // 使用 df 命令检查磁盘空间 (适用于 Linux/macOS)
+    // -k 参数表示以 KB 为单位
+    exec(`df -k "${pathToCheck}"`, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`执行 df 命令失败: ${error}`);
+            // 在 Windows 或其他不支持 df 的系统上，返回一个极大值以跳过检查
+            return callback(null, Number.MAX_SAFE_INTEGER);
+        }
+        try {
+            const lines = stdout.trim().split('\n');
+            const parts = lines[lines.length - 1].split(/\s+/);
+            const availableKB = parseInt(parts[3], 10);
+            callback(null, availableKB * 1024); // 转换为字节
+        } catch (parseError) {
+             console.error(`解析 df 输出失败: ${parseError}`);
+             callback(parseError, null);
+        }
+    });
 }
 
 // --- 路由 ---
@@ -131,6 +151,107 @@ app.get('/folder/:id', requireLogin, (req, res) => res.sendFile(path.join(__dirn
 app.get('/shares-page', requireLogin, (req, res) => res.sendFile(path.join(__dirname, 'views/shares.html')));
 app.get('/admin', requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 'views/admin.html')));
 
+// --- 核心优化：修改 /upload 路由以包含预检和友好的错误处理 ---
+const multerUpload = upload.array('files');
+app.post('/upload', requireLogin, (req, res, next) => {
+    // 步骤1: 预检查磁盘空间
+    getAvailableDiskSpace(UPLOAD_TEMP_DIR, (err, availableSpace) => {
+        if (err) {
+            return res.status(500).json({ success: false, message: '无法检查服务器磁盘空间。' });
+        }
+        const totalUploadSize = req.headers['content-length']; // 获取整个请求的大小作为估算
+        if (totalUploadSize && availableSpace < totalUploadSize) {
+             // 返回 507 Insufficient Storage 状态码
+            return res.status(507).json({ success: false, message: `上传失败：服务器存储空间不足。需要 ${Math.ceil(totalUploadSize / 1024 / 1024)}MB，可用 ${Math.floor(availableSpace / 1024 / 1024)}MB。` });
+        }
+        // 空间充足，继续执行 multer 进行文件暂存
+        multerUpload(req, res, next);
+    });
+}, fixFileNameEncoding, async (req, res) => {
+    // 步骤2: 处理上传逻辑 (带健壮的清理和错误捕获)
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ success: false, message: '没有选择文件' });
+    }
+
+    const initialFolderId = parseInt(req.body.folderId, 10);
+    const userId = req.session.userId;
+    const storage = storageManager.getStorage();
+    const overwritePaths = req.body.overwritePaths ? JSON.parse(req.body.overwritePaths) : [];
+    let relativePaths = req.body.relativePaths;
+
+    if (!relativePaths) {
+        relativePaths = req.files.map(file => file.originalname);
+    } else if (!Array.isArray(relativePaths)) {
+        relativePaths = [relativePaths];
+    }
+
+    if (req.files.length !== relativePaths.length) {
+        req.files.forEach(file => fs.unlink(file.path, err => {
+            if (err) console.error(`清理暂存文件失败: ${file.path}`, err);
+        }));
+        return res.status(400).json({ success: false, message: '上传文件和路径信息不匹配。' });
+    }
+
+    const results = [];
+    const uploadPromises = [];
+
+    for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        const relativePath = relativePaths[i];
+
+        const uploadTask = async () => {
+            try {
+                const pathParts = (relativePath || file.originalname).split('/');
+                const fileName = pathParts.pop() || file.originalname;
+                const folderPathParts = pathParts;
+                const isOverwrite = overwritePaths.includes(relativePath);
+                
+                const targetFolderId = await data.resolvePathToFolderId(initialFolderId, folderPathParts, userId);
+                
+                if (isOverwrite) {
+                    const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
+                    if (existingFile) {
+                        const filesToDelete = await data.getFilesByIds([existingFile.message_id], userId);
+                        await storage.remove(filesToDelete, userId);
+                    }
+                } else {
+                     const conflict = await data.findFileInFolder(fileName, targetFolderId, userId);
+                     if (conflict) {
+                         console.log(`跳过文件 "${relativePath}" 因为它已存在且未被标记为覆盖。`);
+                         return;
+                     }
+                }
+                
+                const readStream = fs.createReadStream(file.path);
+                const result = await storage.upload(readStream, fileName, file.mimetype, userId, targetFolderId, file.size);
+                results.push(result);
+
+            } finally {
+                // 步骤3: 确保每个文件的暂存文件都被清理
+                fs.unlink(file.path, (err) => {
+                    if (err) console.error(`删除暂存文件失败: ${file.path}`, err);
+                });
+            }
+        };
+        uploadPromises.push(uploadTask());
+    }
+
+    try {
+        await Promise.all(uploadPromises);
+        res.json({ success: true, results });
+    } catch (error) {
+        console.error("上传处理错误:", error);
+        // 步骤3: 捕获底层错误并返回友好提示
+        if (error.code === 'ENOSPC' || error.errno === -122) {
+            res.status(507).json({ success: false, message: '上传失败：服务器存储空间不足。' });
+        } else {
+            res.status(500).json({ success: false, message: '处理上传时发生错误: ' + error.message });
+        }
+    }
+});
+
+
+// ... (此处省略其他未变动的 API 路由, 以保持简洁)
 app.get('/local-files/:userId/:fileId', requireLogin, (req, res) => {
     if (String(req.params.userId) !== String(req.session.userId) && !req.session.isAdmin) {
         return res.status(403).send("权限不足");
@@ -286,87 +407,6 @@ app.delete('/api/admin/webdav/:userId', requireAdmin, (req, res) => {
         res.status(500).json({ success: false, message: '删除设定失败' });
     }
 });
-
-// --- 核心重构：修改 /upload 路由 ---
-app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, async (req, res) => {
-    if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ success: false, message: '没有选择文件' });
-    }
-
-    const initialFolderId = parseInt(req.body.folderId, 10);
-    const userId = req.session.userId;
-    const storage = storageManager.getStorage();
-    const overwritePaths = req.body.overwritePaths ? JSON.parse(req.body.overwritePaths) : [];
-    let relativePaths = req.body.relativePaths;
-
-    if (!relativePaths) {
-        relativePaths = req.files.map(file => file.originalname);
-    } else if (!Array.isArray(relativePaths)) {
-        relativePaths = [relativePaths];
-    }
-
-    if (req.files.length !== relativePaths.length) {
-        // 清理已生成的暂存文件
-        req.files.forEach(file => fs.unlink(file.path, err => {
-            if (err) console.error(`清理暂存文件失败: ${file.path}`, err);
-        }));
-        return res.status(400).json({ success: false, message: '上传文件和路径信息不匹配。' });
-    }
-
-    const results = [];
-    const uploadPromises = [];
-
-    for (let i = 0; i < req.files.length; i++) {
-        const file = req.files[i];
-        const relativePath = relativePaths[i];
-
-        const uploadTask = async () => {
-            const pathParts = (relativePath || file.originalname).split('/');
-            const fileName = pathParts.pop() || file.originalname;
-            const folderPathParts = pathParts;
-            const isOverwrite = overwritePaths.includes(relativePath);
-            
-            try {
-                const targetFolderId = await data.resolvePathToFolderId(initialFolderId, folderPathParts, userId);
-                
-                if (isOverwrite) {
-                    const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
-                    if (existingFile) {
-                        const filesToDelete = await data.getFilesByIds([existingFile.message_id], userId);
-                        await storage.remove(filesToDelete, userId);
-                    }
-                } else {
-                     const conflict = await data.findFileInFolder(fileName, targetFolderId, userId);
-                     if (conflict) {
-                         console.log(`跳过文件 "${relativePath}" 因为它已存在且未被标记为覆盖。`);
-                         return; // 跳过此文件
-                     }
-                }
-                
-                // 建立可读取流并传递给存储模块
-                const readStream = fs.createReadStream(file.path);
-                const result = await storage.upload(readStream, fileName, file.mimetype, userId, targetFolderId, file.size);
-                results.push(result);
-
-            } finally {
-                // 自动清理：无论成功或失败，都删除暂存文件
-                fs.unlink(file.path, (err) => {
-                    if (err) console.error(`删除暂存文件失败: ${file.path}`, err);
-                });
-            }
-        };
-        uploadPromises.push(uploadTask());
-    }
-
-    try {
-        await Promise.all(uploadPromises);
-        res.json({ success: true, results });
-    } catch (error) {
-        console.error("上传处理错误:", error);
-        res.status(500).json({ success: false, message: '处理上传时发生错误: ' + error.message });
-    }
-});
-
 
 app.post('/api/text-file', requireLogin, async (req, res) => {
     const { mode, fileId, folderId, fileName, content } = req.body;

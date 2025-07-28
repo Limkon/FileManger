@@ -266,7 +266,7 @@ function getAllFolders(userId) {
 }
 
 async function moveItem(itemId, itemType, targetFolderId, userId, options = {}) {
-    const { overwriteList = [], mergeList = [] } = options;
+    const { overwriteList = new Set(), mergeList = new Set() } = options; // Use Sets for faster lookups
 
     if (itemType === 'folder') {
         const folderToMove = (await getItemsByIds([itemId], userId))[0];
@@ -275,7 +275,7 @@ async function moveItem(itemId, itemType, targetFolderId, userId, options = {}) 
         const existingFolder = await findFolderByName(folderToMove.name, targetFolderId, userId);
 
         if (existingFolder) {
-            if (mergeList.includes(folderToMove.name)) {
+            if (mergeList.has(folderToMove.name)) {
                 // 合并逻辑
                 const children = await getChildrenOfFolder(itemId, userId);
                 for (const child of children) {
@@ -293,10 +293,12 @@ async function moveItem(itemId, itemType, targetFolderId, userId, options = {}) 
         
         const conflict = await findFileInFolder(fileToMove.fileName, targetFolderId, userId);
         
-        if (conflict && overwriteList.includes(fileToMove.fileName)) {
+        if (conflict && overwriteList.has(fileToMove.fileName)) {
             const storage = require('./storage').getStorage();
             const filesToDelete = await getFilesByIds([conflict.message_id], userId);
-            await storage.remove(filesToDelete, userId); 
+            if(filesToDelete.length > 0) {
+                 await storage.remove(filesToDelete, userId); // This already handles DB deletion
+            }
             await moveItems([itemId], [], targetFolderId, userId);
         } else if (!conflict) {
             await moveItems([itemId], [], targetFolderId, userId);
@@ -636,6 +638,22 @@ async function resolvePathToFolderId(startFolderId, pathParts, userId) {
     return currentParentId;
 }
 
+async function findAllMoveConflicts(itemIds, targetFolderId, userId) {
+    const itemsToMove = await getItemsByIds(itemIds, userId);
+    const fileConflicts = [];
+
+    for (const item of itemsToMove) {
+        if (item.type === 'file') {
+            const existingFile = await findFileInFolder(item.name, targetFolderId, userId);
+            if (existingFile) {
+                fileConflicts.push(item.name);
+            }
+        }
+    }
+    return fileConflicts;
+}
+
+
 module.exports = {
     createUser,
     findUserByName,
@@ -674,5 +692,6 @@ module.exports = {
     checkFolderConflict,
     checkFullConflict,
     resolvePathToFolderId,
-    findFolderByPath
+    findFolderByPath,
+    findAllMoveConflicts, // 导出新函数
 };

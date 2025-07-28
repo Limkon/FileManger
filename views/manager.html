@@ -1,773 +1,181 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-Hant">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>网络硬盘</title>
-    <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
-    <link rel="stylesheet" href="/manager.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>网络硬盘</title>
+  <script src="/vendor/axios/axios.min.js"></script>
+  <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="/manager.css">
 </head>
 <body>
-    <div class="container">
-        <header class="main-header">
-            <h1>我的文件</h1>
-            <div class="header-actions">
-                <a href="/shares-page" class="action-btn"><i class="fas fa-share-alt"></i> 分享管理</a>
-                <a href="/logout" class="action-btn"><i class="fas fa-sign-out-alt"></i> 登出</a>
-            </div>
-        </header>
-        
-        <div id="toolbar">
-            <label for="upload-input" class="upload-btn">
-                <i class="fas fa-upload"></i> 上传文件
-                <input type="file" id="upload-input" multiple>
-            </label>
-            <label for="upload-folder-input" class="upload-btn">
-                <i class="fas fa-folder-open"></i> 上传文件夹
-                <input type="file" id="upload-folder-input" webkitdirectory directory multiple>
-            </label>
-            <button id="new-folder-btn"><i class="fas fa-folder-plus"></i> 新建文件夹</button>
-            <button id="new-text-file-btn"><i class="fas fa-file-alt"></i> 新建文本文件</button>
-            <button id="download-btn" disabled><i class="fas fa-download"></i> 下载</button>
-            <button id="delete-btn" disabled><i class="fas fa-trash-alt"></i> 删除</button>
-            <div class="search-container">
-                <input type="text" id="search-input" placeholder="搜索文件...">
-                <button id="search-btn"><i class="fas fa-search"></i></button>
-            </div>
-        </div>
+  <div class="container">
+    <header class="main-header">
+      <a href="#" id="homeLink">
+        <h1><i class="fas fa-home"></i> 我的文件</h1>
+      </a>
+      <div class="header-buttons">
+        <button id="view-switch-btn" class="upload-link-btn" title="切换视图"><i class="fas fa-list"></i></button>
+        <a href="/shares-page" class="upload-link-btn"><i class="fas fa-share-alt"></i><span class="button-text"> 管理共享</span></a>
+        <button id="showUploadModalBtn" class="upload-link-btn"><i class="fas fa-upload"></i><span class="button-text"> 上传文件</span></button>
+        <button id="changePasswordBtn" class="upload-link-btn"><i class="fas fa-key"></i><span class="button-text"> 修改密码</span></button>
+        <button id="logoutBtn" class="upload-link-btn"><i class="fas fa-sign-out-alt"></i><span class="button-text"> 登出</span></button>
+      </div>
+    </header>
 
-        <div id="breadcrumb"></div>
-
-        <div id="file-list-container">
-            <div id="file-list-header">
-                <div class="header-item file-select-all"><input type="checkbox" id="select-all-checkbox"></div>
-                <div class="header-item file-icon"></div>
-                <div class="header-item file-name">名称</div>
-                <div class="header-item file-size">大小</div>
-                <div class="header-item file-date">修改日期</div>
-                <div class="header-item file-actions">操作</div>
-            </div>
-            <ul id="file-list"></ul>
-        </div>
-    </div>
-
-    <div id="context-menu" class="context-menu"></div>
-
-    <div id="loading-overlay" class="loading-overlay" style="display: none;">
-        <div class="spinner"></div>
-        <p id="loading-text">处理中...</p>
-    </div>
-
-    <div id="conflict-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
-            <h2 id="conflict-title">发现同名文件</h2>
-            <p>在目标位置已存在一个名为 "<b id="conflict-filename"></b>" 的项目。</p>
-            <p>您想如何处理？</p>
-            <div class="modal-actions">
-                <button id="conflict-overwrite-one">覆盖 (当前)</button>
-                <button id="conflict-overwrite-all">全部覆盖</button>
-                <button id="conflict-skip-one">跳过 (当前)</button>
-                <button id="conflict-skip-all">全部跳过</button>
-                <button id="conflict-cancel" class="cancel-btn">放弃操作</button>
-            </div>
-        </div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+        <nav class="breadcrumb" id="breadcrumb" style="margin-bottom: 0; flex-grow: 1;"></nav>
+        <form class="search-form" id="searchForm">
+            <i class="fas fa-search"></i>
+            <input type="search" id="searchInput" placeholder="搜寻所有文件...">
+        </form>
     </div>
     
-    <div id="move-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
-            <h2>移动到...</h2>
-            <ul id="folder-tree"></ul>
-            <div class="modal-actions">
-                <button id="confirm-move-btn" disabled>移动到此处</button>
-                <button id="cancel-move-btn" class="cancel-btn">取消</button>
+    <div id="dropZone">
+        <div class="item-grid" id="itemGrid"></div>
+        <div class="item-list-view" id="itemListView" style="display: none;">
+            <div class="list-header">
+                <div class="list-name">名称</div>
+                <div class="list-size">大小</div>
+                <div class="list-date">修改日期</div>
+            </div>
+            <div class="list-body" id="itemListBody"></div>
+        </div>
+        <div id="dropZoneOverlay">
+            <span>将拖到此处以上传</span>
+        </div>
+    </div>
+  </div>
+
+  <div id="previewModal" class="modal">
+    <span class="close-button">&times;</span>
+    <div class="modal-content preview-modal-content" id="modalContent"></div>
+  </div>
+  
+  <div id="shareModal" class="modal">
+    <div class="share-modal-content">
+        <h3 id="shareModalTitle">分享</h3>
+        <div id="shareOptions">
+            <p>请选择分享链接的有效期：</p>
+            <select id="expiresInSelect">
+                <option value="1h">1 小时</option>
+                <option value="3h">3 小时</option>
+                <option value="5h">5 小时</option>
+                <option value="7h">7 小时</option>
+                <option value="24h" selected>24 小时</option>
+                <option value="7d">7 天</option>
+                <option value="0">永久有效</option>
+            </select>
+            <button id="confirmShareBtn" class="confirm-share">生成分享链接</button>
+            <button id="cancelShareBtn" class="cancel-share">取消</button>
+        </div>
+        <div id="shareResult" style="display: none;">
+            <p>分享链接已创建！</p>
+            <div id="shareLinkContainer" class="share-link-container"></div>
+            <button id="copyLinkBtn">复制链接</button>
+            <button id="closeShareModalBtn" class="cancel-share">关闭</button>
+        </div>
+    </div>
+  </div>
+
+  <div id="moveModal" class="modal">
+    <div class="move-modal-content">
+        <h3>移动到...</h3>
+        <p>请选择目标夹：</p>
+        <div id="folderTree"></div>
+        <button id="confirmMoveBtn" disabled>确定移动</button>
+        <button id="cancelMoveBtn">取消</button>
+    </div>
+  </div>
+
+  <div id="conflictModal" class="modal">
+    <div class="move-modal-content">
+        <h3>文件冲突</h3>
+        <p>目标文件夹中已存在同名文件：</p>
+        <p><b id="conflictFileName"></b></p>
+        <p>您要如何处理？</p>
+        <div id="conflictOptions">
+            <button data-action="overwrite">覆盖</button>
+            <button data-action="overwrite_all">全部覆盖</button>
+            <button data-action="skip">取消</button>
+            <button data-action="skip_all">全部取消</button>
+            <button data-action="abort" style="background-color: #dc3545;">放弃</button>
+        </div>
+    </div>
+  </div>
+
+  <div id="folderConflictModal" class="modal">
+    <div class="move-modal-content">
+        <h3>文件夹冲突</h3>
+        <p>目标位置已存在同名文件夹：</p>
+        <p><b id="folderConflictName"></b></p>
+        <p>您希望如何处理？</p>
+        <div id="folderConflictOptions">
+            <button data-action="merge">合并文件夹 (同名文件将被覆盖)</button>
+            <button data-action="skip">略过此文件夹</button>
+            <button data-action="abort" style="background-color: #dc3545;">放弃整个移动操作</button>
+        </div>
+    </div>
+  </div>
+
+  <div id="uploadModal" class="modal">
+    <div class="upload-modal-content">
+        <span class="close-button" id="closeUploadModalBtn">&times;</span>
+        <h2>上传</h2>
+        <div id="uploadNotificationArea"></div>
+        <form id="uploadForm">
+            <div class="upload-options">
+                <label for="fileInput" class="custom-upload-btn"><i class="fas fa-file"></i> 选择文件</label>
+                <input type="file" name="files" id="fileInput" multiple />
+                
+                <label for="folderInput" class="custom-upload-btn"><i class="fas fa-folder"></i> 选择目录</label>
+                <input type="file" id="folderInput" webkitdirectory directory />
+            </div>
+
+            <ul id="file-selection-list"></ul>
+            <label for="folderSelect" style="display: block; margin-bottom: 8px; font-weight: 500;">上传到目录：</label>
+            <select name="folderId" id="folderSelect">
+            </select>
+            <input type="text" name="caption" id="uploadCaption" placeholder="可选的说明文字(对所有生效)" />
+            <button type="submit" id="uploadSubmitBtn">上传</button>
+        </form>
+        <div class="progress-area" id="progressArea">
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar">0%</div>
             </div>
         </div>
     </div>
-    
-     <div id="toast-container"></div>
+  </div>
 
-    <script src="/vendor/axios/axios.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // DOM Elements
-            const fileList = document.getElementById('file-list');
-            const breadcrumb = document.getElementById('breadcrumb');
-            const selectAllCheckbox = document.getElementById('select-all-checkbox');
-            const downloadBtn = document.getElementById('download-btn');
-            const deleteBtn = document.getElementById('delete-btn');
-            const newFolderBtn = document.getElementById('new-folder-btn');
-            const newTextFileBtn = document.getElementById('new-text-file-btn');
-            const uploadInput = document.getElementById('upload-input');
-            const uploadFolderInput = document.getElementById('upload-folder-input');
-            const searchInput = document.getElementById('search-input');
-            const searchBtn = document.getElementById('search-btn');
-            const loadingOverlay = document.getElementById('loading-overlay');
-            const loadingText = document.getElementById('loading-text');
-            const contextMenu = document.getElementById('context-menu');
-            const moveModal = document.getElementById('move-modal');
-            const folderTree = document.getElementById('folder-tree');
-            const confirmMoveBtn = document.getElementById('confirm-move-btn');
-            const cancelMoveBtn = document.getElementById('cancel-move-btn');
-            const conflictModal = document.getElementById('conflict-modal');
-            const conflictTitle = document.getElementById('conflict-title');
-            const conflictFilename = document.getElementById('conflict-filename');
+  <div class="progress-area" id="dragUploadProgressArea">
+    <div class="progress-bar-container">
+        <div class="progress-bar" id="dragUploadProgressBar">0%</div>
+    </div>
+  </div>
+  
+  <div class="action-bar" id="actionBar">
+      <div class="action-bar-content">
+          <div class="action-bar-top-row">
+              <div class="action-bar-info-left">
+                  <button id="selectAllBtn" title="全选/取消全选"><i class="fas fa-check-double"></i></button>
+                  <span id="selectionCount">已选择 0 个项目</span>
+              </div>
+          </div>
+          <div class="actions">
+              <button id="createFolderBtn" title="建立文件夹"><i class="fas fa-folder-plus"></i></button>
+              <button id="textEditBtn" title="新建文字档"><i class="fas fa-file-alt"></i></button>
+              <button id="multiSelectBtn" title="多选模式"><i class="fas fa-tasks"></i></button>
+              <button id="previewBtn" title="预览" disabled><i class="fas fa-eye"></i></button>
+              <button id="moveBtn" title="移动" disabled><i class="fas fa-people-arrows"></i></button>
+              <button id="shareBtn" title="分享" disabled><i class="fas fa-share-alt"></i></button>
+              <button id="renameBtn" title="重命名" disabled><i class="fas fa-i-cursor"></i></button>
+              <button id="downloadBtn" title="下载" disabled><i class="fas fa-download"></i></button>
+              <button id="deleteBtn" title="删除" disabled><i class="fas fa-trash-alt"></i></button>
+          </div>
+      </div>
+      <button id="collapseBtn" title="收起/展开"><i class="fas fa-chevron-down"></i></button>
+  </div>
 
-            let currentFolderId = null;
-            let currentPath = [];
-            let selectedForMove = null;
-            let conflictResolver = null;
-
-            // --- 辅助函数 ---
-            function formatFileSize(bytes) {
-                if (bytes === 0) return '0 B';
-                const k = 1024;
-                const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-            }
-
-            function formatDate(timestamp) {
-                const date = new Date(timestamp);
-                return date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-            }
-
-            function showToast(message, type = 'success') {
-                const toastContainer = document.getElementById('toast-container');
-                const toast = document.createElement('div');
-                toast.className = `toast ${type}`;
-                toast.textContent = message;
-                toastContainer.appendChild(toast);
-                setTimeout(() => {
-                    toast.classList.add('show');
-                    setTimeout(() => {
-                        toast.classList.remove('show');
-                        setTimeout(() => toast.remove(), 500);
-                    }, 3000);
-                }, 100);
-            }
-
-            function showLoading(text = '处理中...') {
-                loadingText.textContent = text;
-                loadingOverlay.style.display = 'flex';
-            }
-
-            function hideLoading() {
-                loadingOverlay.style.display = 'none';
-            }
-            
-            function getFileIcon(fileName) {
-                const extension = fileName.split('.').pop().toLowerCase();
-                const iconMap = {
-                    'txt': 'fa-file-alt', 'json': 'fa-file-alt', 'md': 'fa-file-alt',
-                    'jpg': 'fa-file-image', 'jpeg': 'fa-file-image', 'png': 'fa-file-image', 'gif': 'fa-file-image', 'bmp': 'fa-file-image', 'svg': 'fa-file-image',
-                    'mp4': 'fa-file-video', 'mov': 'fa-file-video', 'avi': 'fa-file-video', 'mkv': 'fa-file-video',
-                    'mp3': 'fa-file-audio', 'wav': 'fa-file-audio', 'flac': 'fa-file-audio',
-                    'pdf': 'fa-file-pdf',
-                    'doc': 'fa-file-word', 'docx': 'fa-file-word',
-                    'xls': 'fa-file-excel', 'xlsx': 'fa-file-excel',
-                    'ppt': 'fa-file-powerpoint', 'pptx': 'fa-file-powerpoint',
-                    'zip': 'fa-file-archive', 'rar': 'fa-file-archive', '7z': 'fa-file-archive', 'gz': 'fa-file-archive', 'tar': 'fa-file-archive',
-                    'js': 'fa-file-code', 'html': 'fa-file-code', 'css': 'fa-file-code', 'py': 'fa-file-code', 'java': 'fa-file-code', 'cpp': 'fa-file-code', 'c': 'fa-file-code',
-                };
-                return iconMap[extension] || 'fa-file';
-            }
-            
-            // --- 核心渲染函数 ---
-            function renderFiles(contents) {
-                fileList.innerHTML = '';
-                if (!contents || (!contents.folders.length && !contents.files.length)) {
-                    fileList.innerHTML = '<li class="empty-folder">这个文件夹是空的</li>';
-                    return;
-                }
-                
-                contents.folders.forEach(folder => {
-                    const li = document.createElement('li');
-                    li.className = 'file-item';
-                    li.dataset.id = folder.id;
-                    li.dataset.type = 'folder';
-                    li.dataset.name = folder.name;
-                    li.innerHTML = `
-                        <div class="file-select"><input type="checkbox" class="item-checkbox"></div>
-                        <div class="file-icon"><i class="fas fa-folder"></i></div>
-                        <div class="file-name">${folder.name}</div>
-                        <div class="file-size">-</div>
-                        <div class="file-date">-</div>
-                        <div class="file-actions">
-                            <button class="action-btn-sm rename-btn"><i class="fas fa-edit"></i></button>
-                            <button class="action-btn-sm share-btn"><i class="fas fa-share-alt"></i></button>
-                        </div>
-                    `;
-                    fileList.appendChild(li);
-                });
-
-                contents.files.forEach(file => {
-                    const li = document.createElement('li');
-                    li.className = 'file-item';
-                    li.dataset.id = file.id;
-                    li.dataset.type = 'file';
-                    li.dataset.name = file.fileName;
-                    
-                    const canPreview = file.mimetype && (file.mimetype.startsWith('text/') || file.mimetype.startsWith('image/'));
-                    const isTextFile = file.mimetype && file.mimetype.startsWith('text/');
-
-                    li.innerHTML = `
-                        <div class="file-select"><input type="checkbox" class="item-checkbox"></div>
-                        <div class="file-icon">
-                            ${file.thumb_file_id ? `<img src="/thumbnail/${file.id}" class="thumbnail-img">` : `<i class="fas ${getFileIcon(file.fileName)}"></i>`}
-                        </div>
-                        <div class="file-name">${file.fileName}</div>
-                        <div class="file-size">${formatFileSize(file.size)}</div>
-                        <div class="file-date">${formatDate(file.date)}</div>
-                        <div class="file-actions">
-                            ${canPreview ? `<button class="action-btn-sm preview-btn"><i class="fas fa-eye"></i></button>` : ''}
-                            ${isTextFile ? `<button class="action-btn-sm edit-btn"><i class="fas fa-file-signature"></i></button>` : ''}
-                            <button class="action-btn-sm rename-btn"><i class="fas fa-edit"></i></button>
-                            <button class="action-btn-sm share-btn"><i class="fas fa-share-alt"></i></button>
-                        </div>
-                    `;
-                    fileList.appendChild(li);
-                });
-
-                updateSelectionState();
-            }
-            
-            function renderBreadcrumb() {
-                breadcrumb.innerHTML = '';
-                currentPath.forEach((part, index) => {
-                    const span = document.createElement('span');
-                    if (index < currentPath.length - 1) {
-                        const a = document.createElement('a');
-                        a.href = '#';
-                        a.textContent = part.name;
-                        a.dataset.folderId = part.id;
-                        a.addEventListener('click', e => {
-                            e.preventDefault();
-                            loadFolder(part.id);
-                        });
-                        span.appendChild(a);
-                        span.innerHTML += ' &gt; ';
-                    } else {
-                        span.textContent = part.name;
-                    }
-                    breadcrumb.appendChild(span);
-                });
-            }
-
-            // --- 数据加载 ---
-            async function loadFolder(folderId) {
-                showLoading('正在加载...');
-                try {
-                    const url = folderId === 'search' ? `/api/search?q=${encodeURIComponent(searchInput.value)}` : `/api/folder/${folderId}`;
-                    const response = await axios.get(url);
-                    currentPath = response.data.path;
-                    currentFolderId = folderId === 'search' ? currentFolderId : folderId;
-                    renderFiles(response.data.contents);
-                    renderBreadcrumb();
-                    selectAllCheckbox.checked = false;
-                } catch (error) {
-                    showToast('加载文件列表失败', 'error');
-                } finally {
-                    hideLoading();
-                }
-            }
-
-            // --- 核心功能逻辑 ---
-
-            function handleConflict(conflicts, type) {
-                return new Promise((resolve) => {
-                    let currentIndex = 0;
-                    const decisions = {
-                        overwrite: [],
-                        skip: [],
-                        cancel: false
-                    };
-                    let overwriteAllTriggered = false;
-                    let skipAllTriggered = false;
-
-                    const showNextConflict = () => {
-                        if (overwriteAllTriggered) {
-                            for (let i = currentIndex; i < conflicts.length; i++) {
-                                decisions.overwrite.push(conflicts[i].name || conflicts[i]);
-                            }
-                            conflictModal.style.display = 'none';
-                            resolve(decisions);
-                            return;
-                        }
-                        if (skipAllTriggered) {
-                            for (let i = currentIndex; i < conflicts.length; i++) {
-                                decisions.skip.push(conflicts[i].name || conflicts[i]);
-                            }
-                            conflictModal.style.display = 'none';
-                            resolve(decisions);
-                            return;
-                        }
-
-                        if (currentIndex >= conflicts.length) {
-                            conflictModal.style.display = 'none';
-                            resolve(decisions);
-                            return;
-                        }
-
-                        const conflict = conflicts[currentIndex];
-                        conflictFilename.textContent = conflict.name || conflict;
-                        conflictTitle.textContent = `发现同名${type === 'move' ? '项目' : '文件'}`;
-                        document.getElementById('conflict-cancel').textContent = `放弃${type === 'move' ? '移动' : '上传'}`;
-                        conflictModal.style.display = 'flex';
-                    };
-
-                    conflictResolver = (decision) => {
-                        const currentConflictName = conflicts[currentIndex].name || conflicts[currentIndex];
-                        
-                        if (decision === 'overwriteOne') {
-                            decisions.overwrite.push(currentConflictName);
-                            currentIndex++;
-                            showNextConflict();
-                        } else if (decision === 'skipOne') {
-                            decisions.skip.push(currentConflictName);
-                            currentIndex++;
-                            showNextConflict();
-                        } else if (decision === 'overwriteAll') {
-                            overwriteAllTriggered = true;
-                            showNextConflict();
-                        } else if (decision === 'skipAll') {
-                            skipAllTriggered = true;
-                            showNextConflict();
-                        } else if (decision === 'cancel') {
-                            decisions.cancel = true;
-                            conflictModal.style.display = 'none';
-                            resolve(decisions);
-                        }
-                    };
-                    showNextConflict();
-                });
-            }
-            
-            document.getElementById('conflict-overwrite-one').addEventListener('click', () => conflictResolver('overwriteOne'));
-            document.getElementById('conflict-skip-one').addEventListener('click', () => conflictResolver('skipOne'));
-            document.getElementById('conflict-overwrite-all').addEventListener('click', () => conflictResolver('overwriteAll'));
-            document.getElementById('conflict-skip-all').addEventListener('click', () => conflictResolver('skipAll'));
-            document.getElementById('conflict-cancel').addEventListener('click', () => conflictResolver('cancel'));
-
-            async function handleFileUpload(files) {
-                if (files.length === 0) return;
-                showLoading('正在检查文件...');
-
-                const filesToCheck = Array.from(files).map(file => ({
-                    name: file.name,
-                    relativePath: file.webkitRelativePath || file.name,
-                }));
-                
-                try {
-                    const res = await axios.post('/api/check-existence', { files: filesToCheck, folderId: currentFolderId });
-                    
-                    const conflicts = res.data.files.filter(f => f.exists);
-                    let overwritePaths = [];
-                    let filesToUpload = Array.from(files);
-
-                    if (conflicts.length > 0) {
-                        hideLoading();
-                        const decisions = await handleConflict(conflicts.map(c => ({ name: c.relativePath })), 'upload');
-
-                        if (decisions.cancel) {
-                            showToast('上传已取消。');
-                            return;
-                        }
-
-                        overwritePaths = decisions.overwrite;
-                        const skipPaths = new Set(decisions.skip);
-
-                        filesToUpload = filesToUpload.filter(file => {
-                            const relativePath = file.webkitRelativePath || file.name;
-                            return !skipPaths.has(relativePath);
-                        });
-                        
-                        if (filesToUpload.length === 0) {
-                             showToast('所有冲突文件均已跳过，没有文件需要上传。');
-                             return;
-                        }
-                    }
-                    
-                    if (filesToUpload.length > 0) {
-                        showLoading(`正在上传 ${filesToUpload.length} 个文件...`);
-                        const formData = new FormData();
-                        formData.append('folderId', currentFolderId);
-                        formData.append('overwritePaths', JSON.stringify(overwritePaths));
-
-                        filesToUpload.forEach(file => {
-                            formData.append('files', file);
-                            formData.append('relativePaths', file.webkitRelativePath || file.name);
-                        });
-
-                        await axios.post('/upload', formData);
-                        showToast('上传成功！');
-                    }
-                    
-                } catch (error) {
-                    showToast('上传失败: ' + (error.response?.data?.message || error.message), 'error');
-                } finally {
-                    hideLoading();
-                    loadFolder(currentFolderId);
-                }
-            }
-            
-            async function moveSelectedItems(targetFolderId) {
-                const selectedItems = getSelectedItems();
-                if (selectedItems.length === 0) return;
-                
-                showLoading('正在检查目标位置...');
-                try {
-                    const res = await axios.post('/api/check-move-conflict', {
-                        itemIds: selectedItems.map(item => item.id),
-                        targetFolderId: targetFolderId
-                    });
-                    
-                    const conflicts = [...res.data.fileConflicts, ...res.data.folderConflicts];
-                    let overwriteList = [];
-                    let mergeList = [];
-                    let itemsToMove = selectedItems.map(item => item.id);
-
-                    if (conflicts.length > 0) {
-                        hideLoading();
-                        const decisions = await handleConflict(conflicts.map(name => ({name})), 'move');
-
-                        if (decisions.cancel) {
-                            showToast('移动操作已取消。');
-                            return;
-                        }
-
-                        const skipNames = new Set(decisions.skip);
-                        const overwriteNames = new Set(decisions.overwrite);
-
-                        itemsToMove = selectedItems.filter(item => !skipNames.has(item.name)).map(item => item.id);
-
-                        if (itemsToMove.length === 0) {
-                            showToast('所有冲突项目均已跳过，没有项目被移动。');
-                            return;
-                        }
-                        
-                        overwriteNames.forEach(name => {
-                            if (res.data.fileConflicts.includes(name)) overwriteList.push(name);
-                            if (res.data.folderConflicts.includes(name)) mergeList.push(name);
-                        });
-                    }
-                    
-                    if (itemsToMove.length > 0) {
-                        showLoading('正在移动项目...');
-                        await axios.post('/api/move', {
-                            itemIds: itemsToMove,
-                            targetFolderId: targetFolderId,
-                            overwriteList,
-                            mergeList
-                        });
-                        showToast('移动成功！');
-                    }
-                } catch (error) {
-                     showToast('移动失败: ' + (error.response?.data?.message || error.message), 'error');
-                } finally {
-                    hideLoading();
-                    loadFolder(currentFolderId);
-                }
-            }
-
-            function getSelectedItems() {
-                const selected = [];
-                document.querySelectorAll('.item-checkbox:checked').forEach(checkbox => {
-                    const item = checkbox.closest('.file-item');
-                    selected.push({
-                        id: item.dataset.id,
-                        type: item.dataset.type,
-                        name: item.dataset.name
-                    });
-                });
-                return selected;
-            }
-
-            function updateSelectionState() {
-                const selectedItems = getSelectedItems();
-                const hasSelection = selectedItems.length > 0;
-                downloadBtn.disabled = !hasSelection;
-                deleteBtn.disabled = !hasSelection;
-            }
-            
-            async function createNewFolder() {
-                const folderName = prompt('请输入新文件夹的名称：');
-                if (folderName) {
-                    try {
-                        await axios.post('/api/folder', { name: folderName, parentId: currentFolderId });
-                        showToast('文件夹创建成功！');
-                        loadFolder(currentFolderId);
-                    } catch (error) {
-                        showToast('创建失败: ' + (error.response?.data?.message || error.message), 'error');
-                    }
-                }
-            }
-
-            async function createNewTextFile() {
-                const fileName = prompt('请输入新文本文件的名称 (需以.txt结尾)：', '.txt');
-                if (fileName && fileName.endsWith('.txt')) {
-                    try {
-                        await axios.post('/api/text-file', {
-                            mode: 'create',
-                            folderId: currentFolderId,
-                            fileName: fileName,
-                            content: ''
-                        });
-                        showToast('文本文件创建成功！');
-                        loadFolder(currentFolderId);
-                    } catch (error) {
-                        showToast('创建失败: ' + (error.response?.data?.message || error.message), 'error');
-                    }
-                } else if(fileName) {
-                    showToast('文件名必须以 .txt 结尾', 'error');
-                }
-            }
-            
-            async function renameItem(id, type, oldName) {
-                const newName = prompt(`请输入新的名称：`, oldName);
-                if (newName && newName !== oldName) {
-                    try {
-                        await axios.post('/rename', { id, newName, type });
-                        showToast('重命名成功！');
-                        loadFolder(currentFolderId);
-                    } catch (error) {
-                        showToast('重命名失败: ' + (error.response?.data?.message || error.message), 'error');
-                    }
-                }
-            }
-
-            async function deleteSelectedItems() {
-                const selectedItems = getSelectedItems();
-                if (selectedItems.length === 0) return;
-                
-                if (confirm(`确定要删除选中的 ${selectedItems.length} 个项目吗？此操作无法恢复。`)) {
-                    showLoading('正在删除...');
-                    try {
-                        const filesToDelete = selectedItems.filter(i => i.type === 'file').map(i => i.id);
-                        const foldersToDelete = selectedItems.filter(i => i.type === 'folder').map(i => i.id);
-                        
-                        if (filesToDelete.length > 0) {
-                            await axios.post('/delete-multiple', { messageIds: filesToDelete });
-                        }
-                        for (const folderId of foldersToDelete) {
-                            await axios.post('/api/folder/delete', { folderId });
-                        }
-                        showToast('删除成功！');
-                    } catch (error) {
-                        showToast('删除失败: ' + (error.response?.data?.message || error.message), 'error');
-                    } finally {
-                        hideLoading();
-                        loadFolder(currentFolderId);
-                    }
-                }
-            }
-            
-            async function downloadSelectedItems() {
-                const selectedItems = getSelectedItems();
-                if (selectedItems.length === 0) return;
-                showLoading('正在准备下载...');
-                try {
-                    const response = await axios.post('/api/download-archive', {
-                        messageIds: selectedItems.filter(i => i.type === 'file').map(i => i.id),
-                        folderIds: selectedItems.filter(i => i.type === 'folder').map(i => i.id)
-                    }, { responseType: 'blob' });
-                    
-                    const url = window.URL.createObjectURL(new Blob([response.data]));
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.setAttribute('download', 'download.zip');
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                } catch(error) {
-                     showToast('下载失败', 'error');
-                } finally {
-                    hideLoading();
-                }
-            }
-            
-            async function shareItem(id, type) {
-                const expiresIn = prompt("设置分享有效期 (输入 1h, 3h, 24h, 7d, 或 0 表示永久):", "24h");
-                if (expiresIn === null) return;
-
-                const validDurations = ['1h', '3h', '5h', '7h', '24h', '7d', '0'];
-                if (!validDurations.includes(expiresIn)) {
-                    showToast('无效的有效期设置', 'error');
-                    return;
-                }
-                
-                try {
-                    const response = await axios.post('/share', { itemId: id, itemType: type, expiresIn });
-                    if (response.data.success) {
-                        prompt("分享链接已创建:", response.data.url);
-                    }
-                } catch (error) {
-                    showToast('创建分享链接失败', 'error');
-                }
-            }
-
-            // --- 事件监听 ---
-            newFolderBtn.addEventListener('click', createNewFolder);
-            newTextFileBtn.addEventListener('click', createNewTextFile);
-            deleteBtn.addEventListener('click', deleteSelectedItems);
-            downloadBtn.addEventListener('click', downloadSelectedItems);
-            uploadInput.addEventListener('change', e => handleFileUpload(e.target.files));
-            uploadFolderInput.addEventListener('change', e => handleFileUpload(e.target.files));
-            searchBtn.addEventListener('click', () => loadFolder('search'));
-            searchInput.addEventListener('keyup', e => { if (e.key === 'Enter') loadFolder('search'); });
-
-            selectAllCheckbox.addEventListener('change', e => {
-                document.querySelectorAll('.item-checkbox').forEach(checkbox => {
-                    checkbox.checked = e.target.checked;
-                });
-                updateSelectionState();
-            });
-
-            fileList.addEventListener('change', e => {
-                if (e.target.classList.contains('item-checkbox')) {
-                    updateSelectionState();
-                }
-            });
-            
-            fileList.addEventListener('dblclick', e => {
-                const item = e.target.closest('.file-item');
-                if (item && item.dataset.type === 'folder') {
-                    loadFolder(item.dataset.id);
-                }
-            });
-
-            fileList.addEventListener('click', e => {
-                const button = e.target.closest('button');
-                if (!button) return;
-                const item = button.closest('.file-item');
-                const id = item.dataset.id;
-                const type = item.dataset.type;
-                const name = item.dataset.name;
-
-                if (button.classList.contains('rename-btn')) renameItem(id, type, name);
-                if (button.classList.contains('share-btn')) shareItem(id, type);
-                if (button.classList.contains('preview-btn')) window.open(`/download/proxy/${id}`);
-                if (button.classList.contains('edit-btn')) window.open(`/editor?fileId=${id}`);
-            });
-
-            // --- Context Menu Logic ---
-            fileList.addEventListener('contextmenu', e => {
-                e.preventDefault();
-                const item = e.target.closest('.file-item');
-                if (!item) return;
-
-                const id = item.dataset.id;
-                const type = item.dataset.type;
-                const name = item.dataset.name;
-
-                contextMenu.innerHTML = `
-                    <div class="context-menu-item" data-action="open">打开</div>
-                    <div class="context-menu-item" data-action="download">下载</div>
-                    <div class="context-menu-item" data-action="move">移动</div>
-                    <div class="context-menu-item" data-action="rename">重命名</div>
-                    <div class="context-menu-item" data-action="share">分享</div>
-                    <div class="context-menu-item" data-action="delete" style="color: red;">删除</div>
-                `;
-                contextMenu.style.display = 'block';
-                contextMenu.style.left = `${e.pageX}px`;
-                contextMenu.style.top = `${e.pageY}px`;
-
-                contextMenu.onclick = (event) => {
-                    const action = event.target.dataset.action;
-                    contextMenu.style.display = 'none';
-
-                    // 确保右键点击的项目被选中
-                    item.querySelector('.item-checkbox').checked = true;
-                    updateSelectionState();
-
-                    switch (action) {
-                        case 'open':
-                            if (type === 'folder') loadFolder(id);
-                            else window.open(`/download/proxy/${id}`);
-                            break;
-                        case 'download': downloadSelectedItems(); break;
-                        case 'move': openMoveModal(); break;
-                        case 'rename': renameItem(id, type, name); break;
-                        case 'share': shareItem(id, type); break;
-                        case 'delete': deleteSelectedItems(); break;
-                    }
-                };
-            });
-            
-            document.addEventListener('click', () => { contextMenu.style.display = 'none'; });
-            
-            // --- Move Modal Logic ---
-            async function openMoveModal() {
-                selectedForMove = getSelectedItems();
-                if (selectedForMove.length === 0) return;
-                
-                showLoading('加载文件夹列表...');
-                try {
-                    const res = await axios.get('/api/folders');
-                    const folders = res.data;
-                    const tree = buildTree(folders);
-                    folderTree.innerHTML = '';
-                    renderTree(tree, folderTree);
-                    moveModal.style.display = 'flex';
-                } catch (error) {
-                    showToast('加载文件夹列表失败', 'error');
-                } finally {
-                    hideLoading();
-                }
-            }
-
-            function buildTree(folders) {
-                const map = {};
-                const roots = [];
-                folders.forEach(folder => {
-                    map[folder.id] = { ...folder, children: [] };
-                });
-                folders.forEach(folder => {
-                    if (folder.parent_id && map[folder.parent_id]) {
-                        map[folder.parent_id].children.push(map[folder.id]);
-                    } else {
-                        roots.push(map[folder.id]);
-                    }
-                });
-                return roots;
-            }
-
-            function renderTree(nodes, parentElement) {
-                nodes.forEach(node => {
-                    const li = document.createElement('li');
-                    li.innerHTML = `<span>${node.name}</span>`;
-                    li.dataset.folderId = node.id;
-                    parentElement.appendChild(li);
-                    if (node.children.length > 0) {
-                        const ul = document.createElement('ul');
-                        li.appendChild(ul);
-                        renderTree(node.children, ul);
-                    }
-                });
-            }
-            
-            folderTree.addEventListener('click', e => {
-                const targetLi = e.target.closest('li');
-                if (targetLi) {
-                    document.querySelectorAll('#folder-tree li.selected').forEach(el => el.classList.remove('selected'));
-                    targetLi.classList.add('selected');
-                    confirmMoveBtn.disabled = false;
-                }
-            });
-
-            confirmMoveBtn.addEventListener('click', () => {
-                const selectedFolder = folderTree.querySelector('li.selected');
-                if (selectedFolder) {
-                    moveModal.style.display = 'none';
-                    moveSelectedItems(selectedFolder.dataset.folderId);
-                }
-            });
-            
-            cancelMoveBtn.addEventListener('click', () => { moveModal.style.display = 'none'; });
-            
-            // --- Initial Load ---
-            const initialFolderId = window.location.pathname.split('/folder/')[1] || '1';
-            loadFolder(initialFolderId);
-        });
-    </script>
+  <script src="/manager.js"></script>
 </body>
 </html>

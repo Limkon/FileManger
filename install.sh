@@ -15,7 +15,7 @@ sleep 5
 
 # 1. 下載並解壓項目到當前目錄
 echo -e "\n${YELLOW}[1/3] 正在下載並解壓項目文件...${NC}"
-curl -L https://github.com/Limkon/telegram-file-manager/archive/refs/heads/master.tar.gz | tar -xz --strip-components=1 || { echo -e "${RED}錯誤：下載或解壓失敗。${NC}"; exit 1; }
+curl -L https://github.com/Limkon/Netwrok-file-manager/archive/refs/heads/master.tar.gz | tar -xz --strip-components=1 || { echo -e "${RED}錯誤：下載或解壓失敗。${NC}"; exit 1; }
 
 # 2. 安裝依賴
 echo -e "\n${YELLOW}[2/3] 正在安裝 Node.js 依賴...${NC}"

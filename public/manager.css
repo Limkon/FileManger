@@ -191,8 +191,8 @@ body {
 .action-bar .actions #downloadBtn { background-color: #20c997; }
 .action-bar .actions #deleteBtn { background-color: #dc3545; }
 
-/* 模態框等其他樣式 */
-/* ... (此處省略了其他未變更的CSS代碼以保持簡潔) ... */
+/* 模态框等其他样式 */
+/* ... (此处省略了其他未变更的CSS代码以保持简洁) ... */
 .modal {
     display: none; position: fixed; z-index: 1001; left: 0; top: 0;
     width: 100%; height: 100%; overflow: auto; background-color: rgba(248, 249, 250, 0.95);

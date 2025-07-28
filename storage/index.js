@@ -12,13 +12,13 @@ function readConfig() {
         if (fs.existsSync(CONFIG_FILE)) {
             const rawData = fs.readFileSync(CONFIG_FILE);
             const config = JSON.parse(rawData);
-            if (!config.webdav) config.webdav = []; // 確保 webdav 設定存在
+            if (!config.webdav) config.webdav = []; // 确保 webdav 设定存在
             return config;
         }
     } catch (error) {
-        console.error("讀取設定檔失敗:", error);
+        console.error("读取设定档失败:", error);
     }
-    return { storageMode: 'telegram', webdav: [] }; // 預設值
+    return { storageMode: 'telegram', webdav: [] }; // 预设值
 }
 
 function writeConfig(config) {
@@ -26,7 +26,7 @@ function writeConfig(config) {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
         return true;
     } catch (error) {
-        console.error("寫入設定檔失敗:", error);
+        console.error("写入设定档失败:", error);
         return false;
     }
 }
@@ -56,5 +56,5 @@ module.exports = {
     getStorage,
     setStorageMode,
     readConfig,
-    writeConfig // 匯出 writeConfig
+    writeConfig // 汇出 writeConfig
 };

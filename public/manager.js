@@ -263,7 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (allItems.length === 0) {
             if (currentView === 'grid') parentGrid.innerHTML = isSearchMode ? '<p>找不到符合条件的文件。</p>' : '<p>这个资料夹是空的。</p>';
-            else parentList.innerHTML = isSearchMode ? '<div class="list-item"><p>找不到符合条件的文件。</p></div>' : '<div class="list-item"><p>这个资料夾是空的。</p></div>';
+            else parentList.innerHTML = isSearchMode ? '<div class="list-item"><p>找不到符合条件的文件。</p></div>' : '<div class="list-item"><p>这个资料夹是空的。</p></div>';
             return;
         }
 
@@ -568,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (hasFolder) {
-                showNotification('不支援拖拽资料夹上传，请使用上传按钮选择资料夾。', 'error');
+                showNotification('不支援拖拽资料夹上传，请使用上传按钮选择资料夹。', 'error');
                 return;
             }
             if (files.length > 0) {
@@ -807,7 +807,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async () => {
             if (selectedItems.size === 0) return;
-            if (!confirm(`确定要删除这 ${selectedItems.size} 个项目吗？\n注意：删除资料夾将会一并删除其所有内容！`)) return;
+            if (!confirm(`确定要删除这 ${selectedItems.size} 个项目吗？\n注意：删除资料夹将会一并删除其所有内容！`)) return;
             const filesToDelete = [], foldersToDelete = [];
             selectedItems.forEach((item, id) => {
                 if (item.type === 'file') filesToDelete.push(parseInt(id));
@@ -878,7 +878,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 moveModal.style.display = 'flex';
                 moveTargetFolderId = null;
                 confirmMoveBtn.disabled = true;
-            } catch { alert('无法获取资料夾列表。'); }
+            } catch { alert('无法获取资料夹列表。'); }
         });
     }
     if (folderTree) {

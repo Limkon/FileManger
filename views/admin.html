@@ -178,11 +178,11 @@
                         username: webdavUsernameInput.value,
                         password: webdavPasswordInput.value,
                     });
-                    alert('WebDAV 设定已儲存!');
+                    alert('WebDAV 设定已储存!');
                     webdavForm.reset();
                     loadWebdavSettings();
                 } catch (error) {
-                    alert('儲存失败: ' + (error.response?.data?.message || '伺服器错误'));
+                    alert('储存失败: ' + (error.response?.data?.message || '伺服器错误'));
                 }
             });
 

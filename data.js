@@ -51,6 +51,18 @@ function listNormalUsers() {
     });
 }
 
+// 新增：取得所有使用者（包含管理員）
+function listAllUsers() {
+    return new Promise((resolve, reject) => {
+        const sql = `SELECT id, username FROM users ORDER BY username ASC`;
+        db.all(sql, [], (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows);
+        });
+    });
+}
+
+
 function deleteUser(userId) {
     return new Promise((resolve, reject) => {
         const sql = `DELETE FROM users WHERE id = ? AND is_admin = 0`;
@@ -615,6 +627,7 @@ module.exports = {
     findUserById,
     changeUserPassword,
     listNormalUsers,
+    listAllUsers, // 匯出新函式
     deleteUser,
     searchItems,
     getFolderContents,

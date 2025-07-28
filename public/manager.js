@@ -29,9 +29,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const conflictModal = document.getElementById('conflictModal');
     const conflictFileName = document.getElementById('conflictFileName');
     const conflictOptions = document.getElementById('conflictOptions');
-    const folderConflictModal = document.getElementById('folderConflictModal');
-    const folderConflictName = document.getElementById('folderConflictName');
-    const folderConflictOptions = document.getElementById('folderConflictOptions');
     const shareModal = document.getElementById('shareModal');
     const uploadModal = document.getElementById('uploadModal');
     const showUploadModalBtn = document.getElementById('showUploadModalBtn');
@@ -161,36 +158,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const conflicts = existenceData.filter(f => f.exists).map(f => f.relativePath);
 
         if (conflicts.length > 0) {
-            const result = await handleConflict(conflicts);
+            const result = await handleConflict(conflicts, "上传");
 
             if (result.action === 'abort') {
                 showNotification('上传操作已放弃。', 'info', !isDrag ? uploadNotificationArea : null);
                 return;
             }
+            
+            Object.entries(result.decisions).forEach(([path, decision]) => {
+                if (decision === 'overwrite') {
+                     overwriteInfo[path] = 'overwrite';
+                }
+            });
 
             fileObjects.forEach(file => {
                 const relativePath = file.webkitRelativePath || file.name;
-                if (conflicts.includes(relativePath)) {
-                    if (result.overwrite[relativePath] === 'overwrite') {
-                        filesToUpload.push(file);
-                        overwriteInfo[relativePath] = 'overwrite';
-                    }
-                } else {
+                // Upload if it's not a conflict, or if it's a conflict we decided to overwrite
+                if (!conflicts.includes(relativePath) || overwriteInfo[relativePath] === 'overwrite') {
                     filesToUpload.push(file);
                 }
             });
+
         } else {
             filesToUpload.push(...fileObjects);
         }
 
         if (filesToUpload.length === 0) {
-            showNotification('已取消，没有文件被上传。', 'info', !isDrag ? uploadNotificationArea : null);
+            showNotification('已取消或跳过所有文件，没有文件被上传。', 'info', !isDrag ? uploadNotificationArea : null);
             return;
         }
     
         const formData = new FormData();
         filesToUpload.forEach(file => {
             formData.append('files', file);
+            // We must always provide the original relative path for the backend to look up the overwrite decision
             formData.append('relativePaths', file.webkitRelativePath || file.name);
         });
         formData.append('folderId', targetFolderId);
@@ -424,48 +425,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         renderItems(currentFolderContents.folders, currentFolderContents.files);
     };
-
-    async function handleFolderConflict(conflicts) {
-        let merge = {};
-        let i = 0;
-
-        function showNextConflict() {
-            return new Promise((resolve) => {
-                if (i >= conflicts.length) {
-                    resolve({ action: 'finish', merge });
-                    return;
-                }
-
-                folderConflictName.textContent = conflicts[i];
-                folderConflictModal.style.display = 'flex';
-
-                folderConflictOptions.onclick = (e) => {
-                    const action = e.target.dataset.action;
-                    if (!action) return;
-
-                    folderConflictModal.style.display = 'none';
-                    if (action === 'merge') {
-                        merge[conflicts[i]] = 'merge';
-                        i++;
-                        resolve(showNextConflict());
-                    } else if (action === 'merge_all') {
-                        conflicts.forEach(c => merge[c] = 'merge');
-                        resolve({ action: 'finish', merge });
-                    } else if (action === 'skip') {
-                        merge[conflicts[i]] = 'skip';
-                        i++;
-                        resolve(showNextConflict());
-                    } else if (action === 'skip_all') {
-                        conflicts.forEach(c => merge[c] = 'skip');
-                        resolve({ action: 'finish', merge });
-                    } else if (action === 'abort') {
-                        resolve({ action: 'abort' });
-                    }
-                };
-            });
-        }
-        return showNextConflict();
-    }
 
     const checkScreenWidthAndCollapse = () => {
         if (window.innerWidth <= 768) {
@@ -930,43 +889,59 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function handleConflict(conflicts) {
-        let overwrite = {};
+    async function handleConflict(conflicts, operationType = "移动") {
+        let decisions = {};
         let i = 0;
 
         function showNextConflict() {
             return new Promise((resolve) => {
                 if (i >= conflicts.length) {
-                    resolve({ action: 'finish', overwrite });
+                    resolve({ action: 'finish', decisions });
                     return;
                 }
 
                 conflictFileName.textContent = conflicts[i];
+                // Update the abort button text based on the operation
+                const abortButton = conflictOptions.querySelector('button[data-action="abort"]');
+                if (abortButton) {
+                    abortButton.textContent = `放弃${operationType}`;
+                }
+
                 conflictModal.style.display = 'flex';
 
-                conflictOptions.onclick = (e) => {
+                // Use a one-time event listener
+                const clickHandler = (e) => {
                     const action = e.target.dataset.action;
                     if (!action) return;
 
                     conflictModal.style.display = 'none';
-                    if (action === 'overwrite') {
-                        overwrite[conflicts[i]] = 'overwrite';
-                        i++;
-                        resolve(showNextConflict());
-                    } else if (action === 'overwrite_all') {
-                        conflicts.forEach(c => overwrite[c] = 'overwrite');
-                        resolve({ action: 'finish', overwrite });
-                    } else if (action === 'skip') {
-                        overwrite[conflicts[i]] = 'skip';
-                        i++;
-                        resolve(showNextConflict());
-                    } else if (action === 'skip_all') {
-                         conflicts.forEach(c => overwrite[c] = 'skip');
-                        resolve({ action: 'finish', overwrite });
-                    } else if (action === 'abort') {
-                        resolve({ action: 'abort' });
+                    conflictOptions.removeEventListener('click', clickHandler); // Clean up listener
+
+                    switch (action) {
+                        case 'overwrite':
+                            decisions[conflicts[i]] = 'overwrite';
+                            i++;
+                            resolve(showNextConflict());
+                            break;
+                        case 'overwrite_all':
+                            conflicts.forEach(c => decisions[c] = 'overwrite');
+                            resolve({ action: 'finish', decisions });
+                            break;
+                        case 'skip':
+                            decisions[conflicts[i]] = 'skip';
+                            i++;
+                            resolve(showNextConflict());
+                            break;
+                        case 'skip_all':
+                            conflicts.forEach(c => decisions[c] = 'skip');
+                            resolve({ action: 'finish', decisions });
+                            break;
+                        case 'abort':
+                            resolve({ action: 'abort' });
+                            break;
                     }
                 };
+                conflictOptions.addEventListener('click', clickHandler, { once: true });
             });
         }
         return showNextConflict();
@@ -975,83 +950,53 @@ document.addEventListener('DOMContentLoaded', () => {
     if (confirmMoveBtn) {
         confirmMoveBtn.addEventListener('click', async () => {
             if (!moveTargetFolderId) return;
-
+    
             const itemIds = Array.from(selectedItems.keys()).map(id => parseInt(id, 10));
-            const itemsToMove = Array.from(selectedItems.entries()).map(([id, item]) => ({
-                id: parseInt(id, 10),
-                name: item.name,
-                type: item.type
-            }));
-
+            
+            let overwriteList = [];
+    
             try {
+                // Step 1: Check for all potential file conflicts recursively
                 const conflictCheckRes = await axios.post('/api/check-move-conflict', {
                     itemIds: itemIds,
                     targetFolderId: moveTargetFolderId
                 });
-
-                const { fileConflicts, folderConflicts } = conflictCheckRes.data;
-
-                let fileOverwriteList = [];
-                let folderMergeList = [];
-                let skippedFolders = [];
-
-                if (folderConflicts && folderConflicts.length > 0) {
-                    for (const folderName of folderConflicts) {
-                        const action = await handleFolderConflict(folderName);
-                        if (action === 'merge') {
-                            folderMergeList.push(folderName);
-                        } else if (action === 'skip') {
-                            const conflictingFolder = itemsToMove.find(item => item.name === folderName && item.type === 'folder');
-                            if (conflictingFolder) {
-                                skippedFolders.push(conflictingFolder.id);
-                            }
-                        } else { // abort
-                            showNotification('移动操作已取消。', 'info');
-                            moveModal.style.display = 'none';
-                            return;
-                        }
-                    }
-                }
-
-                const finalItemsToMove = itemsToMove.filter(item => !skippedFolders.includes(item.id));
-                const finalItemIds = finalItemsToMove.map(item => item.id);
-                const finalFileConflicts = fileConflicts.filter(name => finalItemsToMove.some(item => item.name === name && item.type === 'file'));
-
-
-                if (finalFileConflicts && finalFileConflicts.length > 0) {
-                    const result = await handleConflict(finalFileConflicts);
+    
+                const { fileConflicts } = conflictCheckRes.data;
+    
+                // Step 2: If there are conflicts, show the universal conflict dialog
+                if (fileConflicts && fileConflicts.length > 0) {
+                    const result = await handleConflict(fileConflicts, "移动");
+    
                     if (result.action === 'abort') {
                         showNotification('移动操作已放弃。', 'info');
                         moveModal.style.display = 'none';
                         return;
                     }
-                    fileOverwriteList = result.overwriteList;
+    
+                    // Build the list of files to overwrite based on user decisions
+                    overwriteList = Object.entries(result.decisions)
+                        .filter(([, decision]) => decision === 'overwrite')
+                        .map(([path]) => path);
                 }
-                
-                if (finalItemIds.length === 0) {
-                    moveModal.style.display = 'none';
-                    showNotification('没有项目被移动。', 'info');
-                    loadFolderContents(currentFolderId);
-                    return;
-                }
-
+    
+                // Step 3: Perform the move. The backend will handle the merging logic,
+                // using the overwriteList to resolve file conflicts.
                 await axios.post('/api/move', {
-                    itemIds: finalItemIds,
+                    itemIds: itemIds,
                     targetFolderId: moveTargetFolderId,
-                    overwriteList: fileOverwriteList,
-                    mergeList: folderMergeList
+                    overwriteList: overwriteList
                 });
-
+    
                 moveModal.style.display = 'none';
                 loadFolderContents(currentFolderId);
                 showNotification('项目移动成功！', 'success');
-
+    
             } catch (error) {
                 alert('操作失败：' + (error.response?.data?.message || '服务器错误'));
             }
         });
-    }
-    
+    }    
 
     if (shareBtn && shareModal) {
         const shareOptions = document.getElementById('shareOptions');

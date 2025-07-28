@@ -8,7 +8,7 @@ const archiver = require('archiver');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
 const crypto = require('crypto');
-const { exec } = require('child_process'); // 引入 child_process 模組
+const { exec } = require('child_process');
 const db = require('./database.js'); 
 
 const data = require('./data.js');
@@ -17,9 +17,27 @@ const storageManager = require('./storage');
 const app = express();
 
 const UPLOAD_TEMP_DIR = path.join(__dirname, 'data', 'tmp');
-if (!fs.existsSync(UPLOAD_TEMP_DIR)) {
-    fs.mkdirSync(UPLOAD_TEMP_DIR, { recursive: true });
+
+// --- 核心優化：啟動時清空臨時目錄 ---
+try {
+    if (!fs.existsSync(UPLOAD_TEMP_DIR)) {
+        fs.mkdirSync(UPLOAD_TEMP_DIR, { recursive: true });
+    } else {
+        console.log(`正在清理臨時目錄: ${UPLOAD_TEMP_DIR}`);
+        const tempFiles = fs.readdirSync(UPLOAD_TEMP_DIR);
+        for (const file of tempFiles) {
+            try {
+                fs.unlinkSync(path.join(UPLOAD_TEMP_DIR, file));
+            } catch (err) {
+                console.error(`無法刪除舊的臨時檔案 ${file}:`, err);
+            }
+        }
+        console.log('臨時目錄已清空。');
+    }
+} catch (err) {
+    console.error('初始化或清理臨時目錄時出錯:', err);
 }
+// ------------------------------------------
 
 const diskStorage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -48,7 +66,7 @@ app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// --- 中间件 ---
+// --- 中間件 ---
 const fixFileNameEncoding = (req, res, next) => {
     if (req.files) {
         req.files.forEach(file => {
@@ -67,26 +85,22 @@ function requireAdmin(req, res, next) {
     if (req.session.loggedIn && req.session.isAdmin) {
         return next();
     }
-    res.status(403).send('权限不足');
+    res.status(403).send('權限不足');
 }
 
-// --- 核心优化：磁盘空间检查函数 ---
 function getAvailableDiskSpace(pathToCheck, callback) {
-    // 使用 df 命令检查磁盘空间 (适用于 Linux/macOS)
-    // -k 参数表示以 KB 为单位
     exec(`df -k "${pathToCheck}"`, (error, stdout, stderr) => {
         if (error) {
-            console.error(`执行 df 命令失败: ${error}`);
-            // 在 Windows 或其他不支持 df 的系统上，返回一个极大值以跳过检查
+            console.error(`執行 df 命令失敗: ${error}`);
             return callback(null, Number.MAX_SAFE_INTEGER);
         }
         try {
             const lines = stdout.trim().split('\n');
             const parts = lines[lines.length - 1].split(/\s+/);
             const availableKB = parseInt(parts[3], 10);
-            callback(null, availableKB * 1024); // 转换为字节
+            callback(null, availableKB * 1024);
         } catch (parseError) {
-             console.error(`解析 df 输出失败: ${parseError}`);
+             console.error(`解析 df 輸出失敗: ${parseError}`);
              callback(parseError, null);
         }
     });
@@ -106,17 +120,17 @@ app.post('/login', async (req, res) => {
             req.session.isAdmin = !!user.is_admin;
             res.redirect('/');
         } else {
-            res.status(401).send('账号或密码错误');
+            res.status(401).send('帳號或密碼錯誤');
         }
     } catch(error) {
-        res.status(500).send('登录时发生错误');
+        res.status(500).send('登入時發生錯誤');
     }
 });
 
 app.post('/register', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
-        return res.status(400).send('请提供用户名和密码');
+        return res.status(400).send('請提供使用者名稱和密碼');
     }
     try {
         const salt = await bcrypt.genSalt(10);
@@ -125,7 +139,7 @@ app.post('/register', async (req, res) => {
         await data.createFolder('/', null, newUser.id); 
         res.redirect('/login');
     } catch (error) {
-        res.status(500).send('注册失败，用户名可能已被使用。');
+        res.status(500).send('註冊失敗，使用者名稱可能已被使用。');
     }
 });
 
@@ -142,7 +156,7 @@ app.get('/logout', (req, res) => {
 app.get('/', requireLogin, (req, res) => {
     db.get("SELECT id FROM folders WHERE user_id = ? AND parent_id IS NULL", [req.session.userId], (err, rootFolder) => {
         if (err || !rootFolder) {
-            return res.status(500).send("找不到您的根目录");
+            return res.status(500).send("找不到您的根目錄");
         }
         res.redirect(`/folder/${rootFolder.id}`);
     });
@@ -151,26 +165,31 @@ app.get('/folder/:id', requireLogin, (req, res) => res.sendFile(path.join(__dirn
 app.get('/shares-page', requireLogin, (req, res) => res.sendFile(path.join(__dirname, 'views/shares.html')));
 app.get('/admin', requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 'views/admin.html')));
 
-// --- 核心优化：修改 /upload 路由以包含预检和友好的错误处理 ---
 const multerUpload = upload.array('files');
 app.post('/upload', requireLogin, (req, res, next) => {
-    // 步骤1: 预检查磁盘空间
     getAvailableDiskSpace(UPLOAD_TEMP_DIR, (err, availableSpace) => {
         if (err) {
-            return res.status(500).json({ success: false, message: '无法检查服务器磁盘空间。' });
+            return res.status(500).json({ success: false, message: '無法檢查伺服器磁碟空間。' });
         }
-        const totalUploadSize = req.headers['content-length']; // 获取整个请求的大小作为估算
+        const totalUploadSize = req.headers['content-length'];
         if (totalUploadSize && availableSpace < totalUploadSize) {
-             // 返回 507 Insufficient Storage 状态码
-            return res.status(507).json({ success: false, message: `上传失败：服务器存储空间不足。需要 ${Math.ceil(totalUploadSize / 1024 / 1024)}MB，可用 ${Math.floor(availableSpace / 1024 / 1024)}MB。` });
+            return res.status(507).json({ success: false, message: `上傳失敗：伺服器儲存空間不足。需要 ${Math.ceil(totalUploadSize / 1024 / 1024)}MB，可用 ${Math.floor(availableSpace / 1024 / 1024)}MB。` });
         }
-        // 空间充足，继续执行 multer 进行文件暂存
-        multerUpload(req, res, next);
+        multerUpload(req, res, (err) => {
+            if (err) {
+                 // 捕獲 multer 在暫存過程中可能發生的錯誤 (例如磁碟空間在檢查後突然耗盡)
+                console.error("Multer 錯誤:", err);
+                if (err.code === 'ENOSPC') {
+                     return res.status(507).json({ success: false, message: '上傳失敗：伺服器儲存空間不足。' });
+                }
+                return res.status(500).json({ success: false, message: '檔案接收失敗: ' + err.message });
+            }
+            next();
+        });
     });
 }, fixFileNameEncoding, async (req, res) => {
-    // 步骤2: 处理上传逻辑 (带健壮的清理和错误捕获)
     if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ success: false, message: '没有选择文件' });
+        return res.status(400).json({ success: false, message: '沒有選擇檔案' });
     }
 
     const initialFolderId = parseInt(req.body.folderId, 10);
@@ -179,6 +198,17 @@ app.post('/upload', requireLogin, (req, res, next) => {
     const overwritePaths = req.body.overwritePaths ? JSON.parse(req.body.overwritePaths) : [];
     let relativePaths = req.body.relativePaths;
 
+    // 清理函式，確保即使請求中斷也能嘗試清理
+    const cleanupFiles = () => {
+        if (req.files) {
+            req.files.forEach(file => {
+                fs.unlink(file.path, err => {
+                    if (err) console.error(`清理臨時檔案失敗: ${file.path}`, err);
+                });
+            });
+        }
+    };
+
     if (!relativePaths) {
         relativePaths = req.files.map(file => file.originalname);
     } else if (!Array.isArray(relativePaths)) {
@@ -186,21 +216,20 @@ app.post('/upload', requireLogin, (req, res, next) => {
     }
 
     if (req.files.length !== relativePaths.length) {
-        req.files.forEach(file => fs.unlink(file.path, err => {
-            if (err) console.error(`清理暂存文件失败: ${file.path}`, err);
-        }));
-        return res.status(400).json({ success: false, message: '上传文件和路径信息不匹配。' });
+        cleanupFiles();
+        return res.status(400).json({ success: false, message: '上傳檔案和路徑資訊不匹配。' });
     }
 
     const results = [];
     const uploadPromises = [];
 
-    for (let i = 0; i < req.files.length; i++) {
-        const file = req.files[i];
-        const relativePath = relativePaths[i];
+    // --- 核心優化：在 try/catch/finally 結構中執行所有操作 ---
+    try {
+        for (let i = 0; i < req.files.length; i++) {
+            const file = req.files[i];
+            const relativePath = relativePaths[i];
 
-        const uploadTask = async () => {
-            try {
+            const uploadTask = async () => {
                 const pathParts = (relativePath || file.originalname).split('/');
                 const fileName = pathParts.pop() || file.originalname;
                 const folderPathParts = pathParts;
@@ -217,7 +246,7 @@ app.post('/upload', requireLogin, (req, res, next) => {
                 } else {
                      const conflict = await data.findFileInFolder(fileName, targetFolderId, userId);
                      if (conflict) {
-                         console.log(`跳过文件 "${relativePath}" 因为它已存在且未被标记为覆盖。`);
+                         console.log(`跳過檔案 "${relativePath}" 因為它已存在且未被標記為覆蓋。`);
                          return;
                      }
                 }
@@ -225,42 +254,35 @@ app.post('/upload', requireLogin, (req, res, next) => {
                 const readStream = fs.createReadStream(file.path);
                 const result = await storage.upload(readStream, fileName, file.mimetype, userId, targetFolderId, file.size);
                 results.push(result);
+            };
+            uploadPromises.push(uploadTask());
+        }
 
-            } finally {
-                // 步骤3: 确保每个文件的暂存文件都被清理
-                fs.unlink(file.path, (err) => {
-                    if (err) console.error(`删除暂存文件失败: ${file.path}`, err);
-                });
-            }
-        };
-        uploadPromises.push(uploadTask());
-    }
-
-    try {
         await Promise.all(uploadPromises);
         res.json({ success: true, results });
     } catch (error) {
-        console.error("上传处理错误:", error);
-        // 步骤3: 捕获底层错误并返回友好提示
+        console.error("上傳處理錯誤:", error);
         if (error.code === 'ENOSPC' || error.errno === -122) {
-            res.status(507).json({ success: false, message: '上传失败：服务器存储空间不足。' });
+            res.status(507).json({ success: false, message: '上傳失敗：伺服器儲存空間不足。' });
         } else {
-            res.status(500).json({ success: false, message: '处理上传时发生错误: ' + error.message });
+            res.status(500).json({ success: false, message: '處理上傳時發生錯誤: ' + error.message });
         }
+    } finally {
+        // 確保所有臨時檔案在請求結束時被清理
+        cleanupFiles();
     }
 });
 
-
-// ... (此处省略其他未变动的 API 路由, 以保持简洁)
+// ... (此處省略其他未變動的 API 路由, 以保持簡潔)
 app.get('/local-files/:userId/:fileId', requireLogin, (req, res) => {
     if (String(req.params.userId) !== String(req.session.userId) && !req.session.isAdmin) {
-        return res.status(403).send("权限不足");
+        return res.status(403).send("權限不足");
     }
     const filePath = path.join(__dirname, 'data', 'uploads', req.params.userId, req.params.fileId);
     if (fs.existsSync(filePath)) {
         res.sendFile(filePath);
     } else {
-        res.status(404).send("文件不存在");
+        res.status(404).send("檔案不存在");
     }
 });
 
@@ -270,26 +292,26 @@ app.post('/api/user/change-password', requireLogin, async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     
     if (!oldPassword || !newPassword || newPassword.length < 4) {
-        return res.status(400).json({ success: false, message: '请提供旧密码和新密码，且新密码长度至少 4 个字符。' });
+        return res.status(400).json({ success: false, message: '請提供舊密碼和新密碼，且新密碼長度至少 4 個字元。' });
     }
     try {
         const user = await data.findUserById(req.session.userId);
         if (!user) {
-            return res.status(404).json({ success: false, message: '找不到用户。' });
+            return res.status(404).json({ success: false, message: '找不到使用者。' });
         }
 
         const isMatch = await bcrypt.compare(oldPassword, user.password);
         if (!isMatch) {
-            return res.status(401).json({ success: false, message: '旧密码不正确。' });
+            return res.status(401).json({ success: false, message: '舊密碼不正確。' });
         }
         
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(newPassword, salt);
         await data.changeUserPassword(req.session.userId, hashedPassword);
         
-        res.json({ success: true, message: '密码修改成功。' });
+        res.json({ success: true, message: '密碼修改成功。' });
     } catch (error) {
-        res.status(500).json({ success: false, message: '修改密码失败。' });
+        res.status(500).json({ success: false, message: '修改密碼失敗。' });
     }
 });
 
@@ -300,9 +322,9 @@ app.get('/api/admin/storage-mode', requireAdmin, (req, res) => {
 app.post('/api/admin/storage-mode', requireAdmin, (req, res) => {
     const { mode } = req.body;
     if (storageManager.setStorageMode(mode)) {
-        res.json({ success: true, message: '设定已保存。' });
+        res.json({ success: true, message: '設定已儲存。' });
     } else {
-        res.status(400).json({ success: false, message: '无效的模式' });
+        res.status(400).json({ success: false, message: '無效的模式' });
     }
 });
 
@@ -311,7 +333,7 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
         const users = await data.listNormalUsers();
         res.json(users);
     } catch (error) {
-        res.status(500).json({ success: false, message: '获取用户列表失败。' });
+        res.status(500).json({ success: false, message: '獲取使用者列表失敗。' });
     }
 });
 
@@ -320,7 +342,7 @@ app.get('/api/admin/all-users', requireAdmin, async (req, res) => {
         const users = await data.listAllUsers();
         res.json(users);
     } catch (error) {
-        res.status(500).json({ success: false, message: '获取所有用户列表失败。' });
+        res.status(500).json({ success: false, message: '獲取所有使用者列表失敗。' });
     }
 });
 
@@ -328,7 +350,7 @@ app.get('/api/admin/all-users', requireAdmin, async (req, res) => {
 app.post('/api/admin/add-user', requireAdmin, async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password || password.length < 4) {
-        return res.status(400).json({ success: false, message: '用户名和密码为必填项，且密码长度至少 4 个字符。' });
+        return res.status(400).json({ success: false, message: '使用者名稱和密碼為必填項，且密碼長度至少 4 個字元。' });
     }
     try {
         const salt = await bcrypt.genSalt(10);
@@ -337,35 +359,35 @@ app.post('/api/admin/add-user', requireAdmin, async (req, res) => {
         await data.createFolder('/', null, newUser.id);
         res.json({ success: true, user: newUser });
     } catch (error) {
-        res.status(500).json({ success: false, message: '创建用户失败，可能用户名已被使用。' });
+        res.status(500).json({ success: false, message: '建立使用者失敗，可能使用者名稱已被使用。' });
     }
 });
 
 app.post('/api/admin/change-password', requireAdmin, async (req, res) => {
     const { userId, newPassword } = req.body;
     if (!userId || !newPassword || newPassword.length < 4) {
-        return res.status(400).json({ success: false, message: '用户 ID 和新密码为必填项，且密码长度至少 4 个字符。' });
+        return res.status(400).json({ success: false, message: '使用者 ID 和新密碼為必填項，且密碼長度至少 4 個字元。' });
     }
     try {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(newPassword, salt);
         await data.changeUserPassword(userId, hashedPassword);
-        res.json({ success: true, message: '密码修改成功。' });
+        res.json({ success: true, message: '密碼修改成功。' });
     } catch (error) {
-        res.status(500).json({ success: false, message: '修改密码失败。' });
+        res.status(500).json({ success: false, message: '修改密碼失敗。' });
     }
 });
 
 app.post('/api/admin/delete-user', requireAdmin, async (req, res) => {
     const { userId } = req.body;
     if (!userId) {
-        return res.status(400).json({ success: false, message: '缺少用户 ID。' });
+        return res.status(400).json({ success: false, message: '缺少使用者 ID。' });
     }
     try {
         await data.deleteUser(userId);
-        res.json({ success: true, message: '用户已删除。' });
+        res.json({ success: true, message: '使用者已刪除。' });
     } catch (error) {
-        res.status(500).json({ success: false, message: '删除用户失败。' });
+        res.status(500).json({ success: false, message: '刪除使用者失敗。' });
     }
 });
 
@@ -377,7 +399,7 @@ app.get('/api/admin/webdav', requireAdmin, (req, res) => {
 app.post('/api/admin/webdav', requireAdmin, (req, res) => {
     const { userId, url, username, password } = req.body;
     if (!userId || !url || !username || !password) {
-        return res.status(400).json({ success: false, message: '缺少必要参数' });
+        return res.status(400).json({ success: false, message: '缺少必要參數' });
     }
     const config = storageManager.readConfig();
     if (!config.webdav) config.webdav = [];
@@ -390,9 +412,9 @@ app.post('/api/admin/webdav', requireAdmin, (req, res) => {
     }
 
     if (storageManager.writeConfig(config)) {
-        res.json({ success: true, message: 'WebDAV 设定已保存' });
+        res.json({ success: true, message: 'WebDAV 設定已儲存' });
     } else {
-        res.status(500).json({ success: false, message: '写入设定失败' });
+        res.status(500).json({ success: false, message: '寫入設定失敗' });
     }
 });
 
@@ -402,9 +424,9 @@ app.delete('/api/admin/webdav/:userId', requireAdmin, (req, res) => {
     config.webdav = config.webdav.filter(c => c.userId !== userId);
     
     if (storageManager.writeConfig(config)) {
-        res.json({ success: true, message: 'WebDAV 设定已删除' });
+        res.json({ success: true, message: 'WebDAV 設定已刪除' });
     } else {
-        res.status(500).json({ success: false, message: '删除设定失败' });
+        res.status(500).json({ success: false, message: '刪除設定失敗' });
     }
 });
 
@@ -414,44 +436,44 @@ app.post('/api/text-file', requireLogin, async (req, res) => {
     const storage = storageManager.getStorage();
 
     if (!fileName || !fileName.endsWith('.txt')) {
-        return res.status(400).json({ success: false, message: '文件名无效或不是 .txt 文件' });
+        return res.status(400).json({ success: false, message: '檔名無效或不是 .txt 檔案' });
     }
 
     try {
         const contentBuffer = Buffer.from(content, 'utf8');
         let result;
 
-        // 对于文本文件，由于体积小，直接在内存中处理是可接受的
-        if (mode === 'edit' && fileId) {
-             const filesToDelete = await data.getFilesByIds([fileId], userId);
-            if (filesToDelete.length > 0) {
-                await storage.remove(filesToDelete, userId);
-                // 注意：流式上传需要提供流和大小，这里我们模拟一个
-                const tempFilePath = path.join(UPLOAD_TEMP_DIR, `${Date.now()}-${fileName}`);
-                fs.writeFileSync(tempFilePath, contentBuffer);
-                const readStream = fs.createReadStream(tempFilePath);
-                result = await storage.upload(readStream, fileName, 'text/plain', userId, filesToDelete[0].folder_id, contentBuffer.length);
-                fs.unlinkSync(tempFilePath); // 清理
+        const tempFilePath = path.join(UPLOAD_TEMP_DIR, `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
+        fs.writeFileSync(tempFilePath, contentBuffer);
+        const readStream = fs.createReadStream(tempFilePath);
+
+        try {
+            if (mode === 'edit' && fileId) {
+                 const filesToDelete = await data.getFilesByIds([fileId], userId);
+                if (filesToDelete.length > 0) {
+                    await storage.remove(filesToDelete, userId);
+                    result = await storage.upload(readStream, fileName, 'text/plain', userId, filesToDelete[0].folder_id, contentBuffer.length);
+                } else {
+                    return res.status(404).json({ success: false, message: '找不到要編輯的原始檔案' });
+                }
+            } else if (mode === 'create' && folderId) {
+                 const conflict = await data.checkFullConflict(fileName, folderId, userId);
+                if (conflict) {
+                    return res.status(409).json({ success: false, message: '同目錄下已存在同名檔案或資料夾。' });
+                }
+                result = await storage.upload(readStream, fileName, 'text/plain', userId, folderId, contentBuffer.length);
             } else {
-                return res.status(404).json({ success: false, message: '找不到要编辑的原始文件' });
+                return res.status(400).json({ success: false, message: '請求參數無效' });
             }
-        } else if (mode === 'create' && folderId) {
-             const conflict = await data.checkFullConflict(fileName, folderId, userId);
-            if (conflict) {
-                return res.status(409).json({ success: false, message: '同目录下已存在同名文件或文件夹。' });
-            }
-            const tempFilePath = path.join(UPLOAD_TEMP_DIR, `${Date.now()}-${fileName}`);
-            fs.writeFileSync(tempFilePath, contentBuffer);
-            const readStream = fs.createReadStream(tempFilePath);
-            result = await storage.upload(readStream, fileName, 'text/plain', userId, folderId, contentBuffer.length);
-            fs.unlinkSync(tempFilePath);
-        } else {
-            return res.status(400).json({ success: false, message: '请求参数无效' });
+            res.json({ success: true, fileId: result.fileId });
+        } finally {
+            fs.unlink(tempFilePath, (err) => {
+                if(err) console.error("清理文字檔案暫存檔失敗:", err);
+            });
         }
-        res.json({ success: true, fileId: result.fileId });
     } catch (error) {
-        console.error("文本文件错误:", error);
-        res.status(500).json({ success: false, message: '服务器内部错误' });
+        console.error("文字檔案錯誤:", error);
+        res.status(500).json({ success: false, message: '伺服器內部錯誤' });
     }
 });
 
@@ -463,10 +485,10 @@ app.get('/api/file-info/:id', requireLogin, async (req, res) => {
         if (fileInfo) {
             res.json(fileInfo);
         } else {
-            res.status(404).json({ success: false, message: '找不到文件信息' });
+            res.status(404).json({ success: false, message: '找不到檔案資訊' });
         }
     } catch (error) {
-        res.status(500).json({ success: false, message: '获取文件信息失败' });
+        res.status(500).json({ success: false, message: '獲取檔案資訊失敗' });
     }
 });
 
@@ -476,7 +498,7 @@ app.post('/api/check-existence', requireLogin, async (req, res) => {
         const userId = req.session.userId;
 
         if (!filesToCheck || !Array.isArray(filesToCheck) || !initialFolderId) {
-            return res.status(400).json({ success: false, message: '无效的请求参数。' });
+            return res.status(400).json({ success: false, message: '無效的請求參數。' });
         }
 
         const existenceChecks = await Promise.all(
@@ -498,8 +520,8 @@ app.post('/api/check-existence', requireLogin, async (req, res) => {
         );
         res.json({ success: true, files: existenceChecks });
     } catch (error) {
-        console.error("存在性检查错误:", error);
-        res.status(500).json({ success: false, message: "检查文件是否存在时发生内部错误。" });
+        console.error("存在性檢查錯誤:", error);
+        res.status(500).json({ success: false, message: "檢查檔案是否存在時發生內部錯誤。" });
     }
 });
 
@@ -509,7 +531,7 @@ app.post('/api/check-move-conflict', requireLogin, async (req, res) => {
         const { itemIds, targetFolderId } = req.body;
         const userId = req.session.userId;
         if (!itemIds || !Array.isArray(itemIds) || !targetFolderId) {
-            return res.status(400).json({ success: false, message: '无效的请求参数。' });
+            return res.status(400).json({ success: false, message: '無效的請求參數。' });
         }
 
         const itemsToMove = await data.getItemsByIds(itemIds, userId);
@@ -521,22 +543,22 @@ app.post('/api/check-move-conflict', requireLogin, async (req, res) => {
 
         res.json({ success: true, fileConflicts, folderConflicts });
     } catch (error) {
-        console.error("冲突检查错误:", error);
-        res.status(500).json({ success: false, message: '检查名称冲突时出错。' });
+        console.error("衝突檢查錯誤:", error);
+        res.status(500).json({ success: false, message: '檢查名稱衝突時出錯。' });
     }
 });
 
 app.get('/api/search', requireLogin, async (req, res) => {
     try {
         const query = req.query.q;
-        if (!query) return res.status(400).json({ success: false, message: '需要提供搜索关键字。' });
+        if (!query) return res.status(400).json({ success: false, message: '需要提供搜尋關鍵字。' });
         
         const contents = await data.searchItems(query, req.session.userId); 
         
-        const path = [{ id: null, name: `搜索结果: "${query}"` }];
+        const path = [{ id: null, name: `搜尋結果: "${query}"` }];
         res.json({ contents, path });
     } catch (error) { 
-        res.status(500).json({ success: false, message: '搜索失败。' }); 
+        res.status(500).json({ success: false, message: '搜尋失敗。' }); 
     }
 });
 
@@ -546,7 +568,7 @@ app.get('/api/folder/:id', requireLogin, async (req, res) => {
         const contents = await data.getFolderContents(folderId, req.session.userId);
         const path = await data.getFolderPath(folderId, req.session.userId);
         res.json({ contents, path });
-    } catch (error) { res.status(500).json({ success: false, message: '读取文件夹内容失败。' }); }
+    } catch (error) { res.status(500).json({ success: false, message: '讀取資料夾內容失敗。' }); }
 });
 
 
@@ -554,19 +576,19 @@ app.post('/api/folder', requireLogin, async (req, res) => {
     const { name, parentId } = req.body;
     const userId = req.session.userId;
     if (!name || !parentId) {
-        return res.status(400).json({ success: false, message: '缺少文件夹名称或父 ID。' });
+        return res.status(400).json({ success: false, message: '缺少資料夾名稱或父 ID。' });
     }
     
     try {
         const conflict = await data.checkFullConflict(name, parentId, userId);
         if (conflict) {
-            return res.status(409).json({ success: false, message: '同目录下已存在同名文件或文件夹。' });
+            return res.status(409).json({ success: false, message: '同目錄下已存在同名檔案或資料夾。' });
         }
 
         const result = await data.createFolder(name, parentId, userId);
         res.json(result);
     } catch (error) {
-         res.status(500).json({ success: false, message: error.message || '处理文件夹时发生错误。' });
+         res.status(500).json({ success: false, message: error.message || '處理資料夾時發生錯誤。' });
     }
 });
 
@@ -581,7 +603,7 @@ app.post('/api/move', requireLogin, async (req, res) => {
         const { itemIds, targetFolderId, overwriteList = [], mergeList = [] } = req.body;
         const userId = req.session.userId;
         if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0 || !targetFolderId) {
-            return res.status(400).json({ success: false, message: '无效的请求参数。' });
+            return res.status(400).json({ success: false, message: '無效的請求參數。' });
         }
         
         const items = await data.getItemsByIds(itemIds, userId);
@@ -590,10 +612,10 @@ app.post('/api/move', requireLogin, async (req, res) => {
             await data.moveItem(item.id, item.type, targetFolderId, userId, { overwriteList, mergeList });
         }
         
-        res.json({ success: true, message: "移动成功" });
+        res.json({ success: true, message: "移動成功" });
     } catch (error) { 
-        console.error("移动错误:", error);
-        res.status(500).json({ success: false, message: '移动失败：' + error.message }); 
+        console.error("移動錯誤:", error);
+        res.status(500).json({ success: false, message: '移動失敗：' + error.message }); 
     }
 });
 
@@ -602,14 +624,14 @@ app.post('/api/folder/delete', requireLogin, async (req, res) => {
     const { folderId } = req.body;
     const userId = req.session.userId;
     const storage = storageManager.getStorage();
-    if (!folderId) return res.status(400).json({ success: false, message: '无效的文件夹 ID。' });
+    if (!folderId) return res.status(400).json({ success: false, message: '無效的資料夾 ID。' });
     
     const folderInfo = await data.getFolderPath(folderId, userId);
     if (!folderInfo || folderInfo.length === 0) {
-        return res.status(404).json({ success: false, message: '找不到指定的文件夹。' });
+        return res.status(404).json({ success: false, message: '找不到指定的資料夾。' });
     }
     if (folderInfo.length === 1 && folderInfo[0].id === folderId) {
-        return res.status(400).json({ success: false, message: '无法删除根目录。' });
+        return res.status(400).json({ success: false, message: '無法刪除根目錄。' });
     }
 
     const filesToDelete = await data.deleteFolderRecursive(folderId, userId);
@@ -624,7 +646,7 @@ app.post('/rename', requireLogin, async (req, res) => {
         const { id, newName, type } = req.body;
         const userId = req.session.userId;
         if (!id || !newName || !type) {
-            return res.status(400).json({ success: false, message: '缺少必要参数。'});
+            return res.status(400).json({ success: false, message: '缺少必要參數。'});
         }
 
         let result;
@@ -633,11 +655,11 @@ app.post('/rename', requireLogin, async (req, res) => {
         } else if (type === 'folder') {
             result = await data.renameFolder(parseInt(id, 10), newName, userId);
         } else {
-            return res.status(400).json({ success: false, message: '无效的项目类型。'});
+            return res.status(400).json({ success: false, message: '無效的項目類型。'});
         }
         res.json(result);
     } catch (error) { 
-        res.status(500).json({ success: false, message: '重命名失败' }); 
+        res.status(500).json({ success: false, message: '重命名失敗' }); 
     }
 });
 
@@ -645,7 +667,7 @@ app.post('/delete-multiple', requireLogin, async (req, res) => {
     const { messageIds } = req.body;
     const userId = req.session.userId;
     const storage = storageManager.getStorage();
-    if (!messageIds || !Array.isArray(messageIds)) return res.status(400).json({ success: false, message: '无效的 messageIds。' });
+    if (!messageIds || !Array.isArray(messageIds)) return res.status(400).json({ success: false, message: '無效的 messageIds。' });
 
     const filesToDelete = await data.getFilesByIds(messageIds, userId);
     const result = await storage.remove(filesToDelete, userId);
@@ -668,7 +690,7 @@ app.get('/thumbnail/:message_id', requireLogin, async (req, res) => {
         res.writeHead(200, { 'Content-Type': 'image/gif', 'Content-Length': placeholder.length });
         res.end(placeholder);
 
-    } catch (error) { res.status(500).send('获取缩略图失败'); }
+    } catch (error) { res.status(500).send('獲取縮圖失敗'); }
 });
 
 app.get('/download/proxy/:message_id', requireLogin, async (req, res) => {
@@ -677,7 +699,7 @@ app.get('/download/proxy/:message_id', requireLogin, async (req, res) => {
         const [fileInfo] = await data.getFilesByIds([messageId], req.session.userId);
         
         if (!fileInfo || !fileInfo.file_id) {
-            return res.status(404).send('文件信息未找到');
+            return res.status(404).send('檔案資訊未找到');
         }
 
         const storage = storageManager.getStorage();
@@ -688,19 +710,19 @@ app.get('/download/proxy/:message_id', requireLogin, async (req, res) => {
             if (link) {
                 const response = await axios({ method: 'get', url: link, responseType: 'stream' });
                 response.data.pipe(res);
-            } else { res.status(404).send('无法获取文件链接'); }
+            } else { res.status(404).send('無法獲取檔案連結'); }
         } else if (fileInfo.storage_type === 'local') {
             if (fs.existsSync(fileInfo.file_id)) {
                 res.download(fileInfo.file_id, fileInfo.fileName);
             } else {
-                res.status(404).send('本地文件不存在');
+                res.status(404).send('本地檔案不存在');
             }
         } else if (fileInfo.storage_type === 'webdav') {
             const stream = await storage.stream(fileInfo.file_id, req.session.userId);
             stream.pipe(res);
         }
 
-    } catch (error) { res.status(500).send('下载代理失败'); }
+    } catch (error) { res.status(500).send('下載代理失敗'); }
 });
 
 app.get('/file/content/:message_id', requireLogin, async (req, res) => {
@@ -709,7 +731,7 @@ app.get('/file/content/:message_id', requireLogin, async (req, res) => {
         const [fileInfo] = await data.getFilesByIds([messageId], req.session.userId);
 
         if (!fileInfo || !fileInfo.file_id) {
-            return res.status(404).send('文件信息未找到');
+            return res.status(404).send('檔案資訊未找到');
         }
         
         const storage = storageManager.getStorage();
@@ -720,27 +742,27 @@ app.get('/file/content/:message_id', requireLogin, async (req, res) => {
             if (link) {
                 const response = await axios.get(link, { responseType: 'text' });
                 res.send(response.data);
-            } else { res.status(404).send('无法获取文件链接'); }
+            } else { res.status(404).send('無法獲取檔案連結'); }
         } else if (fileInfo.storage_type === 'local') {
             if (fs.existsSync(fileInfo.file_id)) {
                 const content = await fs.promises.readFile(fileInfo.file_id, 'utf-8');
                 res.send(content);
             } else {
-                res.status(404).send('本地文件不存在');
+                res.status(404).send('本地檔案不存在');
             }
         } else if (fileInfo.storage_type === 'webdav') {
             const stream = await storage.stream(fileInfo.file_id, req.session.userId);
             stream.on('error', (err) => {
-                console.error('WebDAV 流错误:', err);
+                console.error('WebDAV 流錯誤:', err);
                 if (!res.headersSent) {
-                    res.status(500).send('读取WebDAV文件流时发生错误');
+                    res.status(500).send('讀取WebDAV檔案流時發生錯誤');
                 }
             });
             stream.pipe(res);
         }
     } catch (error) { 
-        console.error("文件内容错误:", error);
-        res.status(500).send('无法获取文件内容'); 
+        console.error("檔案內容錯誤:", error);
+        res.status(500).send('無法獲取檔案內容'); 
     }
 });
 
@@ -752,7 +774,7 @@ app.post('/api/download-archive', requireLogin, async (req, res) => {
         const storage = storageManager.getStorage();
 
         if (messageIds.length === 0 && folderIds.length === 0) {
-            return res.status(400).send('未提供任何项目 ID');
+            return res.status(400).send('未提供任何項目 ID');
         }
         let filesToArchive = [];
         if (messageIds.length > 0) {
@@ -766,7 +788,7 @@ app.post('/api/download-archive', requireLogin, async (req, res) => {
             filesToArchive.push(...nestedFiles);
         }
         if (filesToArchive.length === 0) {
-            return res.status(404).send('找不到任何可下载的文件');
+            return res.status(404).send('找不到任何可下載的檔案');
         }
         
         const archive = archiver('zip', { zlib: { level: 9 } });
@@ -791,7 +813,7 @@ app.post('/api/download-archive', requireLogin, async (req, res) => {
         }
         await archive.finalize();
     } catch (error) {
-        res.status(500).send('压缩文件时发生错误');
+        res.status(500).send('壓縮檔案時發生錯誤');
     }
 });
 
@@ -800,7 +822,7 @@ app.post('/share', requireLogin, async (req, res) => {
     try {
         const { itemId, itemType, expiresIn } = req.body;
         if (!itemId || !itemType || !expiresIn) {
-            return res.status(400).json({ success: false, message: '缺少必要参数。' });
+            return res.status(400).json({ success: false, message: '缺少必要參數。' });
         }
         
         const result = await data.createShareLink(parseInt(itemId, 10), itemType, expiresIn, req.session.userId);
@@ -812,8 +834,8 @@ app.post('/share', requireLogin, async (req, res) => {
             res.status(404).json(result); 
         }
     } catch (error) {
-        console.error("分享链接创建错误:", error);
-        res.status(500).json({ success: false, message: '在服务器上创建分享链接时发生错误。' });
+        console.error("分享連結建立錯誤:", error);
+        res.status(500).json({ success: false, message: '在伺服器上建立分享連結時發生錯誤。' });
     }
 });
 
@@ -825,16 +847,16 @@ app.get('/api/shares', requireLogin, async (req, res) => {
             share_url: `${req.protocol}://${req.get('host')}/share/view/${item.type}/${item.share_token}`
         }));
         res.json(fullUrlShares);
-    } catch (error) { res.status(500).json({ success: false, message: '获取分享列表失败' }); }
+    } catch (error) { res.status(500).json({ success: false, message: '獲取分享列表失敗' }); }
 });
 
 app.post('/api/cancel-share', requireLogin, async (req, res) => {
     try {
         const { itemId, itemType } = req.body;
-        if (!itemId || !itemType) return res.status(400).json({ success: false, message: '缺少必要参数' });
+        if (!itemId || !itemType) return res.status(400).json({ success: false, message: '缺少必要參數' });
         const result = await data.cancelShare(parseInt(itemId, 10), itemType, req.session.userId);
         res.json(result);
-    } catch (error) { res.status(500).json({ success: false, message: '取消分享失败' }); }
+    } catch (error) { res.status(500).json({ success: false, message: '取消分享失敗' }); }
 });
 
 app.get('/share/view/file/:token', async (req, res) => {
@@ -866,9 +888,9 @@ app.get('/share/view/file/:token', async (req, res) => {
             }
             res.render('share-view', { file: fileInfo, downloadUrl, textContent });
         } else {
-            res.status(404).render('share-error', { message: '此分享链接无效或已过期。' });
+            res.status(404).render('share-error', { message: '此分享連結無效或已過期。' });
         }
-    } catch (error) { res.status(500).render('share-error', { message: '处理分享请求时发生错误。' }); }
+    } catch (error) { res.status(500).render('share-error', { message: '處理分享請求時發生錯誤。' }); }
 });
 
 app.get('/share/view/folder/:token', async (req, res) => {
@@ -879,10 +901,10 @@ app.get('/share/view/folder/:token', async (req, res) => {
             const contents = await data.getFolderContents(folderInfo.id, folderInfo.user_id);
             res.render('share-folder-view', { folder: folderInfo, contents });
         } else {
-            res.status(404).render('share-error', { message: '此分享链接无效或已过期。' });
+            res.status(404).render('share-error', { message: '此分享連結無效或已過期。' });
         }
     } catch (error) { 
-        res.status(500).render('share-error', { message: '处理分享请求时发生错误。' }); 
+        res.status(500).render('share-error', { message: '處理分享請求時發生錯誤。' }); 
     }
 });
 
@@ -891,7 +913,7 @@ app.get('/share/download/file/:token', async (req, res) => {
         const token = req.params.token;
         const fileInfo = await data.getFileByShareToken(token);
         if (!fileInfo || !fileInfo.file_id) {
-             return res.status(404).send('文件信息未找到或分享链接已过期');
+             return res.status(404).send('檔案資訊未找到或分享連結已過期');
         }
 
         const storage = storageManager.getStorage();
@@ -902,7 +924,7 @@ app.get('/share/download/file/:token', async (req, res) => {
             if (link) {
                 const response = await axios({ method: 'get', url: link, responseType: 'stream' });
                 response.data.pipe(res);
-            } else { res.status(404).send('无法获取文件链接'); }
+            } else { res.status(404).send('無法獲取檔案連結'); }
         } else if (fileInfo.storage_type === 'local') {
             res.download(fileInfo.file_id, fileInfo.fileName);
         } else if (fileInfo.storage_type === 'webdav') {
@@ -910,7 +932,7 @@ app.get('/share/download/file/:token', async (req, res) => {
             stream.pipe(res);
         }
 
-    } catch (error) { res.status(500).send('下载失败'); }
+    } catch (error) { res.status(500).send('下載失敗'); }
 });
 
 app.get('/share/thumbnail/:folderToken/:fileId', async (req, res) => {
@@ -929,7 +951,7 @@ app.get('/share/thumbnail/:folderToken/:fileId', async (req, res) => {
         res.end(placeholder);
 
     } catch (error) {
-        res.status(500).send('获取缩略图失败');
+        res.status(500).send('獲取縮圖失敗');
     }
 });
 
@@ -939,7 +961,7 @@ app.get('/share/download/:folderToken/:fileId', async (req, res) => {
         const fileInfo = await data.findFileInSharedFolder(parseInt(fileId, 10), folderToken);
         
         if (!fileInfo || !fileInfo.file_id) {
-             return res.status(404).send('文件信息未找到或权限不足');
+             return res.status(404).send('檔案資訊未找到或權限不足');
         }
         
         const storage = storageManager.getStorage();
@@ -950,21 +972,21 @@ app.get('/share/download/:folderToken/:fileId', async (req, res) => {
             if (link) {
                 const response = await axios({ method: 'get', url: link, responseType: 'stream' });
                 response.data.pipe(res);
-            } else { res.status(404).send('无法获取文件链接'); }
+            } else { res.status(404).send('無法獲取檔案連結'); }
         } else if (fileInfo.storage_type === 'local') { 
             if (fs.existsSync(fileInfo.file_id)) {
                 res.download(fileInfo.file_id, fileInfo.fileName);
             } else {
-                res.status(404).send('本地文件不存在');
+                res.status(404).send('本地檔案不存在');
             }
         } else if (fileInfo.storage_type === 'webdav') {
             const stream = await storage.stream(fileInfo.file_id, fileInfo.user_id);
             stream.pipe(res);
         }
     } catch (error) {
-        res.status(500).send('下载失败');
+        res.status(500).send('下載失敗');
     }
 });
 
 
-app.listen(PORT, () => console.log(`✅ 服务器已在 http://localhost:${PORT} 上运行`));
+app.listen(PORT, () => console.log(`✅ 伺服器已在 http://localhost:${PORT} 上運行`));

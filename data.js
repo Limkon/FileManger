@@ -51,7 +51,6 @@ function listNormalUsers() {
     });
 }
 
-// 新增：取得所有使用者（包含管理员）
 function listAllUsers() {
     return new Promise((resolve, reject) => {
         const sql = `SELECT id, username FROM users ORDER BY username ASC`;

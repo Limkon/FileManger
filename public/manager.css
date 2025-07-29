@@ -274,8 +274,6 @@ body {
 .editor-container { flex-grow: 1; padding: 10px 0; box-sizing: border-box; display: flex; }
 #editor { width: 100%; height: 100%; border: 1px solid var(--border-color); border-radius: 4px; padding: 15px; box-sizing: border-box; font-family: 'Courier New', Courier, monospace; font-size: 16px; line-height: 1.5; resize: none; }
 #editor:focus { outline: none; }
-#uploadModal { z-index: 1001; }
-#conflictModal, #folderConflictModal { z-index: 1002; }
 
 /* --- 手机端优化 --- */
 @media (max-width: 768px) {

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -91,14 +91,29 @@
   <div id="conflictModal" class="modal">
     <div class="move-modal-content">
         <h3>文件冲突</h3>
-        <p>目标位置已存在同名文件，请选择如何处理：</p>
+        <p>目标文件夹中已存在同名文件：</p>
         <p><b id="conflictFileName"></b></p>
+        <p>您要如何处理？</p>
         <div id="conflictOptions">
             <button data-action="overwrite">覆盖</button>
             <button data-action="overwrite_all">全部覆盖</button>
-            <button data-action="skip">跳过</button>
-            <button data-action="skip_all">全部跳过</button>
+            <button data-action="skip">取消</button>
+            <button data-action="skip_all">全部取消</button>
             <button data-action="abort" style="background-color: #dc3545;">放弃</button>
+        </div>
+    </div>
+  </div>
+
+  <div id="folderConflictModal" class="modal">
+    <div class="move-modal-content">
+        <h3>文件夹冲突</h3>
+        <p>目标位置已存在同名文件夹：</p>
+        <p><b id="folderConflictName"></b></p>
+        <p>您希望如何处理？</p>
+        <div id="folderConflictOptions">
+            <button data-action="merge">合并文件夹 (同名文件将被覆盖)</button>
+            <button data-action="skip">略过此文件夹</button>
+            <button data-action="abort" style="background-color: #dc3545;">放弃整个移动操作</button>
         </div>
     </div>
   </div>

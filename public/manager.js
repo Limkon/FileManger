@@ -29,6 +29,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const conflictModal = document.getElementById('conflictModal');
     const conflictFileName = document.getElementById('conflictFileName');
     const conflictOptions = document.getElementById('conflictOptions');
+    const folderConflictModal = document.getElementById('folderConflictModal');
+    const folderConflictName = document.getElementById('folderConflictName');
+    const folderConflictOptions = document.getElementById('folderConflictOptions');
     const shareModal = document.getElementById('shareModal');
     const uploadModal = document.getElementById('uploadModal');
     const showUploadModalBtn = document.getElementById('showUploadModalBtn');
@@ -154,48 +157,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     
         const filesToUpload = [];
-        const overwriteInfo = {};
-        const conflicts = existenceData.filter(f => f.exists).map(f => f.relativePath);
-
-        if (conflicts.length > 0) {
-            const result = await handleConflict(conflicts, "上传");
-
-            if (result.action === 'abort') {
-                showNotification('上传操作已放弃。', 'info', !isDrag ? uploadNotificationArea : null);
-                return;
-            }
-            
-            Object.entries(result.decisions).forEach(([path, decision]) => {
-                if (decision === 'overwrite') {
-                     overwriteInfo[path] = 'overwrite';
-                }
-            });
-
-            fileObjects.forEach(file => {
-                const relativePath = file.webkitRelativePath || file.name;
-                // Upload if it's not a conflict, or if it's a conflict we decided to overwrite
-                if (!conflicts.includes(relativePath) || overwriteInfo[relativePath] === 'overwrite') {
+        const pathsToOverwrite = [];
+    
+        for (const file of fileObjects) {
+            const relativePath = file.webkitRelativePath || file.name;
+            const existing = existenceData.find(f => f.relativePath === relativePath && f.exists);
+    
+            if (existing) {
+                if (confirm(`文件 "${existing.name}" 已存在于目标位置 (${existing.relativePath})。您要覆盖它吗？`)) {
+                    pathsToOverwrite.push(relativePath);
                     filesToUpload.push(file);
                 }
-            });
-
-        } else {
-            filesToUpload.push(...fileObjects);
+            } else {
+                filesToUpload.push(file);
+            }
         }
-
+    
         if (filesToUpload.length === 0) {
-            showNotification('已取消或跳过所有文件，没有文件被上传。', 'info', !isDrag ? uploadNotificationArea : null);
+            showNotification('已取消，没有文件被上传。', 'info', !isDrag ? uploadNotificationArea : null);
             return;
         }
     
         const formData = new FormData();
         filesToUpload.forEach(file => {
             formData.append('files', file);
-            // We must always provide the original relative path for the backend to look up the overwrite decision
             formData.append('relativePaths', file.webkitRelativePath || file.name);
         });
         formData.append('folderId', targetFolderId);
-        formData.append('overwrite', JSON.stringify(overwriteInfo));
+        formData.append('overwritePaths', JSON.stringify(pathsToOverwrite));
     
         const captionInput = document.getElementById('uploadCaption');
         if (captionInput && captionInput.value && !isDrag) {
@@ -273,8 +262,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const allItems = [...folders, ...files];
         
         if (allItems.length === 0) {
-            if (currentView === 'grid') parentGrid.innerHTML = isSearchMode ? '<p>找不到符合条件的文件。</p>' : '<p>这个文件夹是空的。</p>';
-            else parentList.innerHTML = isSearchMode ? '<div class="list-item"><p>找不到符合条件的文件。</p></div>' : '<div class="list-item"><p>这个文件夹是空的。</p></div>';
+            if (currentView === 'grid') parentGrid.innerHTML = isSearchMode ? '<p>找不到符合条件的文件。</p>' : '<p>这个资料夹是空的。</p>';
+            else parentList.innerHTML = isSearchMode ? '<div class="list-item"><p>找不到符合条件的文件。</p></div>' : '<div class="list-item"><p>这个资料夹是空的。</p></div>';
             return;
         }
 
@@ -425,6 +414,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         renderItems(currentFolderContents.folders, currentFolderContents.files);
     };
+
+    async function handleFolderConflict(folderName) {
+        return new Promise((resolve) => {
+            folderConflictName.textContent = folderName;
+            folderConflictModal.style.display = 'flex';
+
+            folderConflictOptions.onclick = (e) => {
+                const action = e.target.dataset.action;
+                if (!action) return;
+
+                folderConflictModal.style.display = 'none';
+                folderConflictOptions.onclick = null;
+                resolve(action);
+            };
+        });
+    }
 
     const checkScreenWidthAndCollapse = () => {
         if (window.innerWidth <= 768) {
@@ -644,12 +649,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastPart = pathParts.filter(p => p).pop();
             let folderId = parseInt(lastPart, 10);
             if (isNaN(folderId)) {
-                const rootFolderLink = document.querySelector('#breadcrumb a');
-                if(rootFolderLink) {
-                     folderId = rootFolderLink.dataset.folderId || 1;
-                } else {
-                     folderId = 1;
-                }
+                folderId = 1; 
             }
             loadFolderContents(folderId);
         }
@@ -894,58 +894,41 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function handleConflict(conflicts, operationType = "移动") {
-        let decisions = {};
+    async function handleConflict(conflicts) {
+        let overwriteList = [];
         let i = 0;
 
         function showNextConflict() {
             return new Promise((resolve) => {
                 if (i >= conflicts.length) {
-                    resolve({ action: 'finish', decisions });
+                    resolve({ action: 'finish', overwriteList });
                     return;
                 }
 
                 conflictFileName.textContent = conflicts[i];
-                // Update the abort button text based on the operation
-                const abortButton = conflictOptions.querySelector('button[data-action="abort"]');
-                if (abortButton) {
-                    abortButton.textContent = `放弃${operationType}`;
-                }
-
                 conflictModal.style.display = 'flex';
 
-                const clickHandler = (e) => {
+                conflictOptions.onclick = (e) => {
                     const action = e.target.dataset.action;
                     if (!action) return;
 
                     conflictModal.style.display = 'none';
-                    conflictOptions.removeEventListener('click', clickHandler); 
-
-                    switch (action) {
-                        case 'overwrite':
-                            decisions[conflicts[i]] = 'overwrite';
-                            i++;
-                            resolve(showNextConflict());
-                            break;
-                        case 'overwrite_all':
-                            conflicts.slice(i).forEach(c => decisions[c] = 'overwrite');
-                            resolve({ action: 'finish', decisions });
-                            break;
-                        case 'skip':
-                            decisions[conflicts[i]] = 'skip';
-                            i++;
-                            resolve(showNextConflict());
-                            break;
-                        case 'skip_all':
-                             conflicts.slice(i).forEach(c => decisions[c] = 'skip');
-                            resolve({ action: 'finish', decisions });
-                            break;
-                        case 'abort':
-                            resolve({ action: 'abort' });
-                            break;
+                    if (action === 'overwrite') {
+                        overwriteList.push(conflicts[i]);
+                        i++;
+                        resolve(showNextConflict());
+                    } else if (action === 'overwrite_all') {
+                        overwriteList = conflicts;
+                        resolve({ action: 'finish', overwriteList });
+                    } else if (action === 'skip') {
+                        i++;
+                        resolve(showNextConflict());
+                    } else if (action === 'skip_all') {
+                        resolve({ action: 'finish', overwriteList: [] });
+                    } else if (action === 'abort') {
+                        resolve({ action: 'abort' });
                     }
                 };
-                conflictOptions.addEventListener('click', clickHandler, { once: true });
             });
         }
         return showNextConflict();
@@ -954,54 +937,83 @@ document.addEventListener('DOMContentLoaded', () => {
     if (confirmMoveBtn) {
         confirmMoveBtn.addEventListener('click', async () => {
             if (!moveTargetFolderId) return;
-    
+
             const itemIds = Array.from(selectedItems.keys()).map(id => parseInt(id, 10));
-            
-            let overwriteList = [];
-    
+            const itemsToMove = Array.from(selectedItems.entries()).map(([id, item]) => ({
+                id: parseInt(id, 10),
+                name: item.name,
+                type: item.type
+            }));
+
             try {
-                // 步骤 1: 检查所有潜在的文件冲突
                 const conflictCheckRes = await axios.post('/api/check-move-conflict', {
                     itemIds: itemIds,
                     targetFolderId: moveTargetFolderId
                 });
-    
-                const { fileConflicts } = conflictCheckRes.data;
-    
-                // 步骤 2: 如果有冲突，显示通用冲突对话框
-                if (fileConflicts && fileConflicts.length > 0) {
-                    const result = await handleConflict(fileConflicts, "移动");
-    
+
+                const { fileConflicts, folderConflicts } = conflictCheckRes.data;
+
+                let fileOverwriteList = [];
+                let folderMergeList = [];
+                let skippedFolders = [];
+
+                if (folderConflicts && folderConflicts.length > 0) {
+                    for (const folderName of folderConflicts) {
+                        const action = await handleFolderConflict(folderName);
+                        if (action === 'merge') {
+                            folderMergeList.push(folderName);
+                        } else if (action === 'skip') {
+                            const conflictingFolder = itemsToMove.find(item => item.name === folderName && item.type === 'folder');
+                            if (conflictingFolder) {
+                                skippedFolders.push(conflictingFolder.id);
+                            }
+                        } else { // abort
+                            showNotification('移动操作已取消。', 'info');
+                            moveModal.style.display = 'none';
+                            return;
+                        }
+                    }
+                }
+
+                const finalItemsToMove = itemsToMove.filter(item => !skippedFolders.includes(item.id));
+                const finalItemIds = finalItemsToMove.map(item => item.id);
+                const finalFileConflicts = fileConflicts.filter(name => finalItemsToMove.some(item => item.name === name && item.type === 'file'));
+
+
+                if (finalFileConflicts && finalFileConflicts.length > 0) {
+                    const result = await handleConflict(finalFileConflicts);
                     if (result.action === 'abort') {
                         showNotification('移动操作已放弃。', 'info');
                         moveModal.style.display = 'none';
                         return;
                     }
-    
-                    // 根据用户决定建立要覆盖的文件列表
-                    overwriteList = Object.entries(result.decisions)
-                        .filter(([, decision]) => decision === 'overwrite')
-                        .map(([path]) => path);
+                    fileOverwriteList = result.overwriteList;
                 }
-    
-                // 步骤 3: 执行移动
+                
+                if (finalItemIds.length === 0) {
+                    moveModal.style.display = 'none';
+                    showNotification('没有项目被移动。', 'info');
+                    loadFolderContents(currentFolderId);
+                    return;
+                }
+
                 await axios.post('/api/move', {
-                    itemIds: itemIds,
+                    itemIds: finalItemIds,
                     targetFolderId: moveTargetFolderId,
-                    overwriteList: overwriteList
+                    overwriteList: fileOverwriteList,
+                    mergeList: folderMergeList
                 });
-    
+
                 moveModal.style.display = 'none';
-                foldersLoaded = false;
                 loadFolderContents(currentFolderId);
                 showNotification('项目移动成功！', 'success');
-    
+
             } catch (error) {
                 alert('操作失败：' + (error.response?.data?.message || '服务器错误'));
-                moveModal.style.display = 'none';
             }
         });
-    }    
+    }
+    
 
     if (shareBtn && shareModal) {
         const shareOptions = document.getElementById('shareOptions');

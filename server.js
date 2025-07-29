@@ -7,50 +7,14 @@ const axios = require('axios');
 const archiver = require('archiver');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
-const crypto = require('crypto');
-const { exec } = require('child_process');
 const db = require('./database.js'); 
 
 const data = require('./data.js');
 const storageManager = require('./storage'); 
 
 const app = express();
-
-const UPLOAD_TEMP_DIR = path.join(__dirname, 'data', 'tmp');
-
-// --- 核心优化：启动时清空临时目录 ---
-try {
-    if (!fs.existsSync(UPLOAD_TEMP_DIR)) {
-        fs.mkdirSync(UPLOAD_TEMP_DIR, { recursive: true });
-    } else {
-        console.log(`正在清理临时目录: ${UPLOAD_TEMP_DIR}`);
-        const tempFiles = fs.readdirSync(UPLOAD_TEMP_DIR);
-        for (const file of tempFiles) {
-            try {
-                fs.unlinkSync(path.join(UPLOAD_TEMP_DIR, file));
-            } catch (err) {
-                console.error(`无法删除旧的临时文件 ${file}:`, err);
-            }
-        }
-        console.log('临时目录已清空。');
-    }
-} catch (err) {
-    console.error('初始化或清理临时目录时出错:', err);
-}
-// ------------------------------------------
-
-const diskStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, UPLOAD_TEMP_DIR);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = crypto.randomBytes(8).toString('hex');
-        cb(null, `${Date.now()}-${uniqueSuffix}`);
-    }
-});
-
-const upload = multer({ storage: diskStorage, limits: { fileSize: 1000 * 1024 * 1024 } });
-
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage, limits: { fileSize: 1000 * 1024 * 1024 } });
 const PORT = process.env.PORT || 8100;
 
 app.use(session({
@@ -66,7 +30,7 @@ app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// --- 中间件 ---
+// --- 中介软体 ---
 const fixFileNameEncoding = (req, res, next) => {
     if (req.files) {
         req.files.forEach(file => {
@@ -86,24 +50,6 @@ function requireAdmin(req, res, next) {
         return next();
     }
     res.status(403).send('权限不足');
-}
-
-function getAvailableDiskSpace(pathToCheck, callback) {
-    exec(`df -k "${pathToCheck}"`, (error, stdout, stderr) => {
-        if (error) {
-            console.error(`执行 df 命令失败: ${error}`);
-            return callback(null, Number.MAX_SAFE_INTEGER);
-        }
-        try {
-            const lines = stdout.trim().split('\n');
-            const parts = lines[lines.length - 1].split(/\s+/);
-            const availableKB = parseInt(parts[3], 10);
-            callback(null, availableKB * 1024);
-        } catch (parseError) {
-             console.error(`解析 df 输出失败: ${parseError}`);
-             callback(parseError, null);
-        }
-    });
 }
 
 // --- 路由 ---
@@ -127,22 +73,21 @@ app.post('/login', async (req, res) => {
     }
 });
 
-// 因为您说会自己处理，我暂时注释掉此路由，以防意外注册
-// app.post('/register', async (req, res) => {
-//     const { username, password } = req.body;
-//     if (!username || !password) {
-//         return res.status(400).send('请提供使用者名称和密码');
-//     }
-//     try {
-//         const salt = await bcrypt.genSalt(10);
-//         const hashedPassword = await bcrypt.hash(password, salt);
-//         const newUser = await data.createUser(username, hashedPassword); 
-//         await data.createFolder('/', null, newUser.id); 
-//         res.redirect('/login');
-//     } catch (error) {
-//         res.status(500).send('注册失败，使用者名称可能已被使用。');
-//     }
-// });
+app.post('/register', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).send('请提供使用者名称和密码');
+    }
+    try {
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        const newUser = await data.createUser(username, hashedPassword); 
+        await data.createFolder('/', null, newUser.id); 
+        res.redirect('/login');
+    } catch (error) {
+        res.status(500).send('注册失败，使用者名称可能已被使用。');
+    }
+});
 
 app.get('/logout', (req, res) => {
     req.session.destroy(err => {
@@ -166,112 +111,6 @@ app.get('/folder/:id', requireLogin, (req, res) => res.sendFile(path.join(__dirn
 app.get('/shares-page', requireLogin, (req, res) => res.sendFile(path.join(__dirname, 'views/shares.html')));
 app.get('/admin', requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 'views/admin.html')));
 
-const multerUpload = upload.array('files');
-app.post('/upload', requireLogin, (req, res, next) => {
-    getAvailableDiskSpace(UPLOAD_TEMP_DIR, (err, availableSpace) => {
-        if (err) {
-            return res.status(500).json({ success: false, message: '无法检查服务器磁盘空间。' });
-        }
-        const totalUploadSize = req.headers['content-length'];
-        if (totalUploadSize && availableSpace < totalUploadSize) {
-            return res.status(507).json({ success: false, message: `上传失败：服务器储存空间不足。需要 ${Math.ceil(totalUploadSize / 1024 / 1024)}MB，可用 ${Math.floor(availableSpace / 1024 / 1024)}MB。` });
-        }
-        multerUpload(req, res, (err) => {
-            if (err) {
-                 // 捕获 multer 在暂存过程中可能发生的错误 (例如磁盘空间在检查后突然耗尽)
-                console.error("Multer 错误:", err);
-                if (err.code === 'ENOSPC') {
-                     return res.status(507).json({ success: false, message: '上传失败：服务器储存空间不足。' });
-                }
-                return res.status(500).json({ success: false, message: '文件接收失败: ' + err.message });
-            }
-            next();
-        });
-    });
-}, fixFileNameEncoding, async (req, res) => {
-    if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ success: false, message: '没有选择文件' });
-    }
-
-    const initialFolderId = parseInt(req.body.folderId, 10);
-    const userId = req.session.userId;
-    const storage = storageManager.getStorage();
-    const overwriteInfo = req.body.overwrite ? JSON.parse(req.body.overwrite) : {};
-    let relativePaths = req.body.relativePaths;
-
-    // 清理函式，确保即使请求中断也能尝试清理
-    const cleanupFiles = () => {
-        if (req.files) {
-            req.files.forEach(file => {
-                fs.unlink(file.path, err => {
-                    if (err) console.error(`清理临时文件失败: ${file.path}`, err);
-                });
-            });
-        }
-    };
-
-    if (!relativePaths) {
-        relativePaths = req.files.map(file => file.originalname);
-    } else if (!Array.isArray(relativePaths)) {
-        relativePaths = [relativePaths];
-    }
-
-    if (req.files.length !== relativePaths.length) {
-        cleanupFiles();
-        return res.status(400).json({ success: false, message: '上传文件和路径资讯不匹配。' });
-    }
-
-    const results = [];
-    const uploadPromises = [];
-
-    try {
-        for (let i = 0; i < req.files.length; i++) {
-            const file = req.files[i];
-            const relativePath = relativePaths[i];
-            const overwriteAction = overwriteInfo[relativePath];
-
-            const uploadTask = async () => {
-                const pathParts = (relativePath || file.originalname).split('/');
-                const fileName = pathParts.pop() || file.originalname;
-                const folderPathParts = pathParts;
-                
-                const targetFolderId = await data.resolvePathToFolderId(initialFolderId, folderPathParts, userId);
-                
-                const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
-
-                if (existingFile) {
-                    if (overwriteAction === 'overwrite') {
-                        const filesToDelete = await data.getFilesByIds([existingFile.message_id], userId);
-                        if (filesToDelete.length > 0) {
-                           await storage.remove(filesToDelete, userId); // This will also delete from DB
-                        }
-                    } else {
-                        console.log(`跳过文件 "${relativePath}" 因为它已存在且未被标记为覆盖。`);
-                        return;
-                    }
-                }
-                
-                const readStream = fs.createReadStream(file.path);
-                const result = await storage.upload(readStream, fileName, file.mimetype, userId, targetFolderId, file.size);
-                results.push(result);
-            };
-            uploadPromises.push(uploadTask());
-        }
-
-        await Promise.all(uploadPromises);
-        res.json({ success: true, results });
-    } catch (error) {
-        console.error("上传处理错误:", error);
-        if (error.code === 'ENOSPC' || error.errno === -122) {
-            res.status(507).json({ success: false, message: '上传失败：服务器储存空间不足。' });
-        } else {
-            res.status(500).json({ success: false, message: '处理上传时发生错误: ' + error.message });
-        }
-    } finally {
-        cleanupFiles();
-    }
-});
-
 app.get('/local-files/:userId/:fileId', requireLogin, (req, res) => {
     if (String(req.params.userId) !== String(req.session.userId) && !req.session.isAdmin) {
         return res.status(403).send("权限不足");
@@ -280,7 +119,7 @@ app.get('/local-files/:userId/:fileId', requireLogin, (req, res) => {
     if (fs.existsSync(filePath)) {
         res.sendFile(filePath);
     } else {
-        res.status(404).send("文件不存在");
+        res.status(404).send("档案不存在");
     }
 });
 
@@ -428,52 +267,102 @@ app.delete('/api/admin/webdav/:userId', requireAdmin, (req, res) => {
     }
 });
 
+app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, async (req, res) => {
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ success: false, message: '没有选择文件' });
+    }
+
+    const initialFolderId = parseInt(req.body.folderId, 10);
+    const userId = req.session.userId;
+    const storage = storageManager.getStorage();
+    const overwritePaths = req.body.overwritePaths ? JSON.parse(req.body.overwritePaths) : [];
+    let relativePaths = req.body.relativePaths;
+
+    if (!relativePaths) {
+        relativePaths = req.files.map(file => file.originalname);
+    } else if (!Array.isArray(relativePaths)) {
+        relativePaths = [relativePaths];
+    }
+
+    if (req.files.length !== relativePaths.length) {
+        return res.status(400).json({ success: false, message: '上传档案和路径资讯不匹配。' });
+    }
+
+    const results = [];
+    try {
+        for (let i = 0; i < req.files.length; i++) {
+            const file = req.files[i];
+            const relativePath = relativePaths[i];
+
+            const pathParts = (relativePath || file.originalname).split('/');
+            const fileName = pathParts.pop() || file.originalname;
+            const folderPathParts = pathParts;
+
+            const isOverwrite = overwritePaths.includes(relativePath);
+            
+            const targetFolderId = await data.resolvePathToFolderId(initialFolderId, folderPathParts, userId);
+            
+            if (isOverwrite) {
+                const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
+                if (existingFile) {
+                    const filesToDelete = await data.getFilesByIds([existingFile.message_id], userId);
+                    await storage.remove(filesToDelete, userId);
+                }
+            } else {
+                 const conflict = await data.findFileInFolder(fileName, targetFolderId, userId);
+                 if (conflict) {
+                     console.log(`Skipping file "${relativePath}" because it exists and was not marked for overwrite.`);
+                     continue;
+                 }
+            }
+
+            const result = await storage.upload(file.buffer, fileName, file.mimetype, userId, targetFolderId, req.body.caption || '');
+            results.push(result);
+        }
+        res.json({ success: true, results });
+    } catch (error) {
+        console.error("Upload processing error:", error);
+        res.status(500).json({ success: false, message: '处理上传时发生错误: ' + error.message });
+    }
+});
+
 app.post('/api/text-file', requireLogin, async (req, res) => {
     const { mode, fileId, folderId, fileName, content } = req.body;
     const userId = req.session.userId;
     const storage = storageManager.getStorage();
 
     if (!fileName || !fileName.endsWith('.txt')) {
-        return res.status(400).json({ success: false, message: '档名无效或不是 .txt 文件' });
+        return res.status(400).json({ success: false, message: '档名无效或不是 .txt 档案' });
     }
 
     try {
         const contentBuffer = Buffer.from(content, 'utf8');
         let result;
 
-        const tempFilePath = path.join(UPLOAD_TEMP_DIR, `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
-        fs.writeFileSync(tempFilePath, contentBuffer);
-        const readStream = fs.createReadStream(tempFilePath);
-
-        try {
-            if (mode === 'edit' && fileId) {
-                 const filesToDelete = await data.getFilesByIds([fileId], userId);
-                if (filesToDelete.length > 0) {
-                    await storage.remove(filesToDelete, userId);
-                    result = await storage.upload(readStream, fileName, 'text/plain', userId, filesToDelete[0].folder_id, contentBuffer.length);
-                } else {
-                    return res.status(404).json({ success: false, message: '找不到要编辑的原始文件' });
-                }
-            } else if (mode === 'create' && folderId) {
-                 const conflict = await data.checkFullConflict(fileName, folderId, userId);
-                if (conflict) {
-                    return res.status(409).json({ success: false, message: '同目录下已存在同名文件或文件夹。' });
-                }
-                result = await storage.upload(readStream, fileName, 'text/plain', userId, folderId, contentBuffer.length);
+        if (mode === 'edit' && fileId) {
+             const filesToDelete = await data.getFilesByIds([fileId], userId);
+            if (filesToDelete.length > 0) {
+                await storage.remove(filesToDelete, userId);
+                result = await storage.upload(contentBuffer, fileName, 'text/plain', userId, filesToDelete[0].folder_id);
             } else {
-                return res.status(400).json({ success: false, message: '请求参数无效' });
+                return res.status(404).json({ success: false, message: '找不到要编辑的原始档案' });
             }
-            res.json({ success: true, fileId: result.fileId });
-        } finally {
-            fs.unlink(tempFilePath, (err) => {
-                if(err) console.error("清理文字文件暂存档失败:", err);
-            });
+        } else if (mode === 'create' && folderId) {
+             const conflict = await data.checkFullConflict(fileName, folderId, userId);
+            if (conflict) {
+                return res.status(409).json({ success: false, message: '同目录下已存在同名档案或资料夹。' });
+            }
+            result = await storage.upload(contentBuffer, fileName, 'text/plain', userId, folderId);
+        } else {
+            return res.status(400).json({ success: false, message: '请求参数无效' });
         }
+        res.json({ success: true, fileId: result.fileId });
     } catch (error) {
-        console.error("文字文件错误:", error);
-        res.status(500).json({ success: false, message: '服务器内部错误' });
+        console.error("Text file error:", error);
+        res.status(500).json({ success: false, message: '伺服器内部错误' });
     }
 });
+
 
 app.get('/api/file-info/:id', requireLogin, async (req, res) => {
     try {
@@ -482,10 +371,10 @@ app.get('/api/file-info/:id', requireLogin, async (req, res) => {
         if (fileInfo) {
             res.json(fileInfo);
         } else {
-            res.status(404).json({ success: false, message: '找不到文件资讯' });
+            res.status(404).json({ success: false, message: '找不到档案资讯' });
         }
     } catch (error) {
-        res.status(500).json({ success: false, message: '获取文件资讯失败' });
+        res.status(500).json({ success: false, message: '获取档案资讯失败' });
     }
 });
 
@@ -505,22 +394,23 @@ app.post('/api/check-existence', requireLogin, async (req, res) => {
                 const fileName = pathParts.pop() || relativePath;
                 const folderPathParts = pathParts;
 
-                const targetFolderId = await data.resolvePathToFolderId(initialFolderId, folderPathParts, userId);
+                const targetFolderId = await data.findFolderByPath(initialFolderId, folderPathParts, userId);
                 
                 if (targetFolderId === null) {
-                    return { name: fileName, relativePath, exists: false, id: null };
+                    return { name: fileName, relativePath, exists: false, messageId: null };
                 }
 
                 const existingFile = await data.findFileInFolder(fileName, targetFolderId, userId);
-                return { name: fileName, relativePath, exists: !!existingFile, id: existingFile ? existingFile.id : null };
+                return { name: fileName, relativePath, exists: !!existingFile, messageId: existingFile ? existingFile.message_id : null };
             })
         );
         res.json({ success: true, files: existenceChecks });
     } catch (error) {
-        console.error("存在性检查错误:", error);
-        res.status(500).json({ success: false, message: "检查文件是否存在时发生内部错误。" });
+        console.error("Existence check error:", error);
+        res.status(500).json({ success: false, message: "检查档案是否存在时发生内部错误。" });
     }
 });
+
 
 app.post('/api/check-move-conflict', requireLogin, async (req, res) => {
     try {
@@ -530,11 +420,16 @@ app.post('/api/check-move-conflict', requireLogin, async (req, res) => {
             return res.status(400).json({ success: false, message: '无效的请求参数。' });
         }
 
-        const conflicts = await data.findAllMoveConflicts(itemIds, targetFolderId, userId);
-        
-        res.json({ success: true, ...conflicts });
+        const itemsToMove = await data.getItemsByIds(itemIds, userId);
+        const fileNamesToMove = itemsToMove.filter(i => i.type === 'file').map(f => f.name);
+        const folderNamesToMove = itemsToMove.filter(i => i.type === 'folder').map(f => f.name);
+
+        const fileConflicts = await data.checkNameConflict(fileNamesToMove, targetFolderId, userId);
+        const folderConflicts = await data.checkFolderConflict(folderNamesToMove, targetFolderId, userId);
+
+        res.json({ success: true, fileConflicts, folderConflicts });
     } catch (error) {
-        console.error("移动冲突检查错误:", error);
+        console.error("Conflict check error:", error);
         res.status(500).json({ success: false, message: '检查名称冲突时出错。' });
     }
 });
@@ -559,28 +454,30 @@ app.get('/api/folder/:id', requireLogin, async (req, res) => {
         const contents = await data.getFolderContents(folderId, req.session.userId);
         const path = await data.getFolderPath(folderId, req.session.userId);
         res.json({ contents, path });
-    } catch (error) { res.status(500).json({ success: false, message: '读取文件夹内容失败。' }); }
+    } catch (error) { res.status(500).json({ success: false, message: '读取资料夹内容失败。' }); }
 });
+
 
 app.post('/api/folder', requireLogin, async (req, res) => {
     const { name, parentId } = req.body;
     const userId = req.session.userId;
     if (!name || !parentId) {
-        return res.status(400).json({ success: false, message: '缺少文件夹名称或父 ID。' });
+        return res.status(400).json({ success: false, message: '缺少资料夹名称或父 ID。' });
     }
     
     try {
         const conflict = await data.checkFullConflict(name, parentId, userId);
         if (conflict) {
-            return res.status(409).json({ success: false, message: '同目录下已存在同名文件或文件夹。' });
+            return res.status(409).json({ success: false, message: '同目录下已存在同名档案或资料夹。' });
         }
 
         const result = await data.createFolder(name, parentId, userId);
         res.json(result);
     } catch (error) {
-         res.status(500).json({ success: false, message: error.message || '处理文件夹时发生错误。' });
+         res.status(500).json({ success: false, message: error.message || '处理资料夹时发生错误。' });
     }
 });
+
 
 app.get('/api/folders', requireLogin, async (req, res) => {
     const folders = await data.getAllFolders(req.session.userId);
@@ -589,40 +486,37 @@ app.get('/api/folders', requireLogin, async (req, res) => {
 
 app.post('/api/move', requireLogin, async (req, res) => {
     try {
-        const { itemIds, targetFolderId, overwriteList = [] } = req.body;
+        const { itemIds, targetFolderId, overwriteList = [], mergeList = [] } = req.body;
         const userId = req.session.userId;
-        
         if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0 || !targetFolderId) {
             return res.status(400).json({ success: false, message: '无效的请求参数。' });
         }
         
-        const overwriteSet = new Set(overwriteList);
+        const items = await data.getItemsByIds(itemIds, userId);
         
-        const result = await data.moveItems(itemIds, targetFolderId, userId, overwriteSet);
+        for (const item of items) {
+            await data.moveItem(item.id, item.type, targetFolderId, userId, { overwriteList, mergeList });
+        }
         
-        res.json(result);
+        res.json({ success: true, message: "移动成功" });
     } catch (error) { 
-        console.error("移动错误:", error);
-        res.status(500).json({ success: false, message: '移动失败：' + (error.message || '服务器内部错误') }); 
+        console.error("Move error:", error);
+        res.status(500).json({ success: false, message: '移动失败：' + error.message }); 
     }
 });
+
 
 app.post('/api/folder/delete', requireLogin, async (req, res) => {
     const { folderId } = req.body;
     const userId = req.session.userId;
     const storage = storageManager.getStorage();
-    if (!folderId) return res.status(400).json({ success: false, message: '无效的文件夹 ID。' });
+    if (!folderId) return res.status(400).json({ success: false, message: '无效的资料夹 ID。' });
     
     const folderInfo = await data.getFolderPath(folderId, userId);
     if (!folderInfo || folderInfo.length === 0) {
-        return res.status(404).json({ success: false, message: '找不到指定的文件夹。' });
+        return res.status(404).json({ success: false, message: '找不到指定的资料夹。' });
     }
-    // 获取根目录 ID
-    const rootFolder = await new Promise((resolve, reject) => {
-        db.get("SELECT id FROM folders WHERE user_id = ? AND parent_id IS NULL", [userId], (err, row) => err ? reject(err) : resolve(row));
-    });
-
-    if (folderId === rootFolder.id) {
+    if (folderInfo.length === 1 && folderInfo[0].id === folderId) {
         return res.status(400).json({ success: false, message: '无法删除根目录。' });
     }
 
@@ -691,7 +585,7 @@ app.get('/download/proxy/:message_id', requireLogin, async (req, res) => {
         const [fileInfo] = await data.getFilesByIds([messageId], req.session.userId);
         
         if (!fileInfo || !fileInfo.file_id) {
-            return res.status(404).send('文件资讯未找到');
+            return res.status(404).send('文件信息未找到');
         }
 
         const storage = storageManager.getStorage();
@@ -702,12 +596,12 @@ app.get('/download/proxy/:message_id', requireLogin, async (req, res) => {
             if (link) {
                 const response = await axios({ method: 'get', url: link, responseType: 'stream' });
                 response.data.pipe(res);
-            } else { res.status(404).send('无法获取文件连结'); }
+            } else { res.status(404).send('无法获取文件链接'); }
         } else if (fileInfo.storage_type === 'local') {
             if (fs.existsSync(fileInfo.file_id)) {
                 res.download(fileInfo.file_id, fileInfo.fileName);
             } else {
-                res.status(404).send('本地文件不存在');
+                res.status(404).send('本地档案不存在');
             }
         } else if (fileInfo.storage_type === 'webdav') {
             const stream = await storage.stream(fileInfo.file_id, req.session.userId);
@@ -723,7 +617,7 @@ app.get('/file/content/:message_id', requireLogin, async (req, res) => {
         const [fileInfo] = await data.getFilesByIds([messageId], req.session.userId);
 
         if (!fileInfo || !fileInfo.file_id) {
-            return res.status(404).send('文件资讯未找到');
+            return res.status(404).send('文件信息未找到');
         }
         
         const storage = storageManager.getStorage();
@@ -734,18 +628,19 @@ app.get('/file/content/:message_id', requireLogin, async (req, res) => {
             if (link) {
                 const response = await axios.get(link, { responseType: 'text' });
                 res.send(response.data);
-            } else { res.status(404).send('无法获取文件连结'); }
+            } else { res.status(404).send('无法获取文件链接'); }
         } else if (fileInfo.storage_type === 'local') {
             if (fs.existsSync(fileInfo.file_id)) {
                 const content = await fs.promises.readFile(fileInfo.file_id, 'utf-8');
                 res.send(content);
             } else {
-                res.status(404).send('本地文件不存在');
+                res.status(404).send('本地档案不存在');
             }
         } else if (fileInfo.storage_type === 'webdav') {
-            const stream = await storage.stream(fileInfo.file_id, fileInfo.user_id);
+            // 关键修正：为 WebDAV 串流新增错误处理
+            const stream = await storage.stream(fileInfo.file_id, req.session.userId);
             stream.on('error', (err) => {
-                console.error('WebDAV 流错误:', err);
+                console.error('WebDAV stream error:', err);
                 if (!res.headersSent) {
                     res.status(500).send('读取WebDAV文件流时发生错误');
                 }
@@ -753,10 +648,11 @@ app.get('/file/content/:message_id', requireLogin, async (req, res) => {
             stream.pipe(res);
         }
     } catch (error) { 
-        console.error("文件内容错误:", error);
+        console.error("File content error:", error);
         res.status(500).send('无法获取文件内容'); 
     }
 });
+
 
 app.post('/api/download-archive', requireLogin, async (req, res) => {
     try {
@@ -779,7 +675,7 @@ app.post('/api/download-archive', requireLogin, async (req, res) => {
             filesToArchive.push(...nestedFiles);
         }
         if (filesToArchive.length === 0) {
-            return res.status(404).send('找不到任何可下载的文件');
+            return res.status(404).send('找不到任何可下载的档案');
         }
         
         const archive = archiver('zip', { zlib: { level: 9 } });
@@ -804,10 +700,10 @@ app.post('/api/download-archive', requireLogin, async (req, res) => {
         }
         await archive.finalize();
     } catch (error) {
-        console.error("压缩错误:", error);
-        res.status(500).send('压缩文件时发生错误');
+        res.status(500).send('压缩档案时发生错误');
     }
 });
+
 
 app.post('/share', requireLogin, async (req, res) => {
     try {
@@ -825,8 +721,8 @@ app.post('/share', requireLogin, async (req, res) => {
             res.status(404).json(result); 
         }
     } catch (error) {
-        console.error("分享连结建立错误:", error);
-        res.status(500).json({ success: false, message: '在服务器上建立分享连结时发生错误。' });
+        console.error("Share link creation error:", error);
+        res.status(500).json({ success: false, message: '在伺服器上建立分享连结时发生错误。' });
     }
 });
 
@@ -904,7 +800,7 @@ app.get('/share/download/file/:token', async (req, res) => {
         const token = req.params.token;
         const fileInfo = await data.getFileByShareToken(token);
         if (!fileInfo || !fileInfo.file_id) {
-             return res.status(404).send('文件资讯未找到或分享连结已过期');
+             return res.status(404).send('文件信息未找到或分享链接已过期');
         }
 
         const storage = storageManager.getStorage();
@@ -915,7 +811,7 @@ app.get('/share/download/file/:token', async (req, res) => {
             if (link) {
                 const response = await axios({ method: 'get', url: link, responseType: 'stream' });
                 response.data.pipe(res);
-            } else { res.status(404).send('无法获取文件连结'); }
+            } else { res.status(404).send('无法获取文件链接'); }
         } else if (fileInfo.storage_type === 'local') {
             res.download(fileInfo.file_id, fileInfo.fileName);
         } else if (fileInfo.storage_type === 'webdav') {
@@ -952,7 +848,7 @@ app.get('/share/download/:folderToken/:fileId', async (req, res) => {
         const fileInfo = await data.findFileInSharedFolder(parseInt(fileId, 10), folderToken);
         
         if (!fileInfo || !fileInfo.file_id) {
-             return res.status(404).send('文件资讯未找到或权限不足');
+             return res.status(404).send('文件信息未找到或权限不足');
         }
         
         const storage = storageManager.getStorage();
@@ -963,12 +859,12 @@ app.get('/share/download/:folderToken/:fileId', async (req, res) => {
             if (link) {
                 const response = await axios({ method: 'get', url: link, responseType: 'stream' });
                 response.data.pipe(res);
-            } else { res.status(404).send('无法获取文件连结'); }
+            } else { res.status(404).send('无法获取文件链接'); }
         } else if (fileInfo.storage_type === 'local') { 
             if (fs.existsSync(fileInfo.file_id)) {
                 res.download(fileInfo.file_id, fileInfo.fileName);
             } else {
-                res.status(404).send('本地文件不存在');
+                res.status(404).send('本地档案不存在');
             }
         } else if (fileInfo.storage_type === 'webdav') {
             const stream = await storage.stream(fileInfo.file_id, fileInfo.user_id);
@@ -979,4 +875,5 @@ app.get('/share/download/:folderToken/:fileId', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => console.log(`✅ 服务器已在 http://localhost:${PORT} 上运行`));
+
+app.listen(PORT, () => console.log(`✅ 伺服器已在 http://localhost:${PORT} 上运行`));

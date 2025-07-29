@@ -127,21 +127,21 @@ app.post('/login', async (req, res) => {
     }
 });
 
-// app.post('/register', async (req, res) => {
-//     const { username, password } = req.body;
-//     if (!username || !password) {
-//         return res.status(400).send('请提供使用者名称和密码');
-//     }
-//     try {
-//         const salt = await bcrypt.genSalt(10);
-//         const hashedPassword = await bcrypt.hash(password, salt);
-//         const newUser = await data.createUser(username, hashedPassword); 
-//         await data.createFolder('/', null, newUser.id); 
-//         res.redirect('/login');
-//     } catch (error) {
-//         res.status(500).send('注册失败，使用者名称可能已被使用。');
-//     }
-// });
+app.post('/register', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).send('请提供使用者名称和密码');
+    }
+    try {
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        const newUser = await data.createUser(username, hashedPassword); 
+        await data.createFolder('/', null, newUser.id); 
+        res.redirect('/login');
+    } catch (error) {
+        res.status(500).send('注册失败，使用者名称可能已被使用。');
+    }
+});
 
 app.get('/logout', (req, res) => {
     req.session.destroy(err => {
@@ -590,33 +590,14 @@ app.post('/api/move', requireLogin, async (req, res) => {
     try {
         const { itemIds, targetFolderId, overwriteList = [] } = req.body;
         const userId = req.session.userId;
-        const storage = storageManager.getStorage();
-
+        
         if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0 || !targetFolderId) {
             return res.status(400).json({ success: false, message: '无效的请求参数。' });
         }
         
         const overwriteSet = new Set(overwriteList);
-
-        const allItemsToMove = await data.getItemsByIds(itemIds, userId);
-
-        for (const item of allItemsToMove) {
-            if (item.type === 'file') {
-                const conflict = await data.findFileInFolder(item.name, targetFolderId, userId);
-                if (conflict) {
-                    if (overwriteSet.has(item.name)) {
-                        const filesToDelete = await data.getFilesByIds([conflict.message_id], userId);
-                        if (filesToDelete.length > 0) {
-                            await storage.remove(filesToDelete, userId); 
-                        }
-                    } else {
-                        // Skip this file
-                        continue;
-                    }
-                }
-            }
-            await data.moveItem(parseInt(item.id, 10), item.type, targetFolderId, userId, overwriteSet);
-        }
+        
+        await data.moveItems(itemIds, targetFolderId, userId, overwriteSet);
         
         res.json({ success: true, message: "移动成功" });
     } catch (error) { 

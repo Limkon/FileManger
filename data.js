@@ -550,26 +550,39 @@ function cancelShare(itemId, itemType, userId) {
     });
 }
 
-function getConflictingItems(itemNames, targetFolderId, userId) {
-    return new Promise((resolve, reject) => {
-        if (!itemNames || itemNames.length === 0) {
-            return resolve([]);
-        }
-        const uniqueNames = [...new Set(itemNames)];
-        const placeholders = uniqueNames.map(() => '?').join(',');
-        const sql = `
-            SELECT name, 'file' as type FROM files
-            WHERE folder_id = ? AND user_id = ? AND fileName IN (${placeholders})
-            UNION
-            SELECT name, 'folder' as type FROM folders
-            WHERE parent_id = ? AND user_id = ? AND name IN (${placeholders})
-        `;
-        // [FIX] 确保为 SQL 查询中的每个 IN 子句都传递了参数
-        db.all(sql, [targetFolderId, userId, ...uniqueNames, targetFolderId, userId, ...uniqueNames], (err, rows) => {
+async function getConflictingItems(itemNames, targetFolderId, userId) {
+    if (!itemNames || itemNames.length === 0) {
+        return [];
+    }
+    const uniqueNames = [...new Set(itemNames)];
+    const placeholders = uniqueNames.map(() => '?').join(',');
+
+    const sqlFiles = `
+        SELECT fileName as name, 'file' as type FROM files
+        WHERE folder_id = ? AND user_id = ? AND fileName IN (${placeholders})
+    `;
+    const sqlFolders = `
+        SELECT name, 'folder' as type FROM folders
+        WHERE parent_id = ? AND user_id = ? AND name IN (${placeholders})
+    `;
+
+    const fileConflictsPromise = new Promise((resolve, reject) => {
+        db.all(sqlFiles, [targetFolderId, userId, ...uniqueNames], (err, rows) => {
             if (err) return reject(err);
             resolve(rows);
         });
     });
+
+    const folderConflictsPromise = new Promise((resolve, reject) => {
+        db.all(sqlFolders, [targetFolderId, userId, ...uniqueNames], (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows);
+        });
+    });
+
+    const [fileConflicts, folderConflicts] = await Promise.all([fileConflictsPromise, folderConflictsPromise]);
+    
+    return [...fileConflicts, ...folderConflicts];
 }
 
 

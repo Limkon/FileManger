@@ -550,7 +550,7 @@ function cancelShare(itemId, itemType, userId) {
     });
 }
 
-function checkItemNameConflict(itemNames, targetFolderId, userId) {
+function getConflictingItems(itemNames, targetFolderId, userId) {
     return new Promise((resolve, reject) => {
         if (!itemNames || itemNames.length === 0) {
             return resolve([]);
@@ -558,18 +558,19 @@ function checkItemNameConflict(itemNames, targetFolderId, userId) {
         const uniqueNames = [...new Set(itemNames)];
         const placeholders = uniqueNames.map(() => '?').join(',');
         const sql = `
-            SELECT name FROM (
-                SELECT fileName AS name FROM files WHERE folder_id = ? AND user_id = ? AND fileName IN (${placeholders})
-                UNION
-                SELECT name FROM folders WHERE parent_id = ? AND user_id = ? AND name IN (${placeholders})
-            )
+            SELECT name, 'file' as type FROM files
+            WHERE folder_id = ? AND user_id = ? AND fileName IN (${placeholders})
+            UNION
+            SELECT name, 'folder' as type FROM folders
+            WHERE parent_id = ? AND user_id = ? AND name IN (${placeholders})
         `;
         db.all(sql, [targetFolderId, userId, ...uniqueNames, targetFolderId, userId, ...uniqueNames], (err, rows) => {
             if (err) return reject(err);
-            resolve(rows.map(r => r.name));
+            resolve(rows);
         });
     });
 }
+
 
 function checkFullConflict(name, folderId, userId) {
     return new Promise((resolve, reject) => {
@@ -657,7 +658,7 @@ module.exports = {
     renameFolder,
     deleteFilesByIds,
     findFileInFolder,
-    checkItemNameConflict,
+    getConflictingItems,
     checkFullConflict,
     resolvePathToFolderId,
     findFolderByPath,

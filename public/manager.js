@@ -644,7 +644,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastPart = pathParts.filter(p => p).pop();
             let folderId = parseInt(lastPart, 10);
             if (isNaN(folderId)) {
-                folderId = 1; 
+                const rootFolderLink = document.querySelector('#breadcrumb a');
+                if(rootFolderLink) {
+                     folderId = rootFolderLink.dataset.folderId || 1;
+                } else {
+                     folderId = 1;
+                }
             }
             loadFolderContents(folderId);
         }
@@ -1073,12 +1078,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastPart = pathParts.filter(p => p).pop();
         let folderId = parseInt(lastPart, 10);
         if (isNaN(folderId)) {
-            const rootFolderLink = document.querySelector('#breadcrumb a');
-            if(rootFolderLink) {
-                 folderId = rootFolderLink.dataset.folderId || 1;
-            } else {
-                 folderId = 1;
-            }
+            folderId = 1; 
         }
         loadFolderContents(folderId);
         

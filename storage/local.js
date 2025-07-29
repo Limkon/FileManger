@@ -46,7 +46,7 @@ async function upload(tempFilePath, fileName, mimetype, userId, folderId) {
         date: Date.now(),
     }, folderId, userId, 'local');
 
-    return { success: true, message: '档案已储存至本地。', fileId: dbResult.fileId };
+    return { success: true, message: '文件已储存至本地。', fileId: dbResult.fileId };
 }
 
 async function remove(files, userId) {
@@ -57,7 +57,7 @@ async function remove(files, userId) {
         try {
             await fs.unlink(filePath);
         } catch (e) {
-            console.warn(`删除本地档案失败: ${filePath}`, e.message);
+            console.warn(`删除本地文件失败: ${filePath}`, e.message);
         }
     }
     await data.deleteFilesByIds(messageIds, userId);

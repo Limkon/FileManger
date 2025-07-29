@@ -34,7 +34,8 @@ async function upload(tempFilePath, fileName, mimetype, userId, folderId) {
     
     const stats = await fs.stat(finalFilePath);
 
-    const messageId = Date.now() + Math.floor(Math.random() * 1000);
+    // 新生：使用更可靠的方式生成唯一的 messageId，避免冲突
+    const messageId = BigInt(Date.now()) * 1000000n + BigInt(crypto.randomInt(1000000));
 
     const dbResult = await data.addFile({
         message_id: messageId,

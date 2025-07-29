@@ -18,25 +18,36 @@ const app = express();
 // --- 临时文件目录设定与清理 ---
 const TMP_DIR = path.join(__dirname, 'data', 'tmp');
 
-// 启动时清理
-try {
-    if (!fs.existsSync(TMP_DIR)) {
-        fs.mkdirSync(TMP_DIR, { recursive: true });
-    } else {
-        fs.readdirSync(TMP_DIR).forEach(file => {
+// 封装一个健壮的清理函数
+async function cleanupTempDir() {
+    try {
+        if (!fs.existsSync(TMP_DIR)) {
+            await fsp.mkdir(TMP_DIR, { recursive: true });
+            return;
+        }
+        const files = await fsp.readdir(TMP_DIR);
+        for (const file of files) {
             try {
-                fs.unlinkSync(path.join(TMP_DIR, file));
+                await fsp.unlink(path.join(TMP_DIR, file));
             } catch (err) {
-                console.error(`无法删除启动时的临时档: ${file}`, err);
+                // 忽略已经不存在的文件等小错误
+                console.warn(`清理临时文件时发生非致命错误: ${file}`, err.message);
             }
-        });
+        }
+    } catch (error) {
+        console.error(`[严重错误] 清理暂存目录失败: ${TMP_DIR}。`, error);
     }
-} catch (error) {
-    console.error(`[致命错误] 无法建立或清理暂存目录: ${TMP_DIR}。错误: ${error.message}`);
-    process.exit(1);
 }
 
-const upload = multer({ dest: TMP_DIR, limits: { fileSize: 1000 * 1024 * 1024 } });
+// 启动时清理一次
+cleanupTempDir();
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, TMP_DIR)
+  }
+});
+const upload = multer({ storage: storage, limits: { fileSize: 1000 * 1024 * 1024 } });
 const PORT = process.env.PORT || 8100;
 
 app.use(session({
@@ -257,7 +268,7 @@ app.get('/api/admin/webdav', requireAdmin, (req, res) => {
 
 app.post('/api/admin/webdav', requireAdmin, (req, res) => {
     const { url, username, password } = req.body;
-    if (!url || !username) { // 密码可以为空
+    if (!url || !username) { 
         return res.status(400).json({ success: false, message: '缺少必要参数' });
     }
     const config = storageManager.readConfig();
@@ -270,7 +281,31 @@ app.post('/api/admin/webdav', requireAdmin, (req, res) => {
     }
 });
 
-app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, async (req, res) => {
+// 使用 multer 中间件的包装器以进行错误处理
+const uploadMiddleware = (req, res, next) => {
+    const uploader = upload.array('files');
+    uploader(req, res, function (err) {
+        if (err) {
+            console.error("Multer upload error:", err);
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ success: false, message: '文件大小超出限制。' });
+            }
+            // 捕获磁盘空间不足等系统错误
+            if (err.code === 'EDQUOT' || err.errno === -122) {
+                return res.status(507).json({ success: false, message: '上传失败：磁盘空间不足。' });
+            }
+            return res.status(500).json({ success: false, message: '上传档案到暂存区时发生错误。' });
+        }
+        next();
+    });
+};
+
+app.post('/upload', requireLogin, async (req, res, next) => {
+    // 每次上传前都先清理一次
+    await cleanupTempDir();
+    next();
+}, uploadMiddleware, fixFileNameEncoding, async (req, res) => {
+
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ success: false, message: '没有选择文件' });
     }
@@ -316,17 +351,17 @@ app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, as
                      const conflict = await data.findFileInFolder(fileName, targetFolderId, userId);
                      if (conflict) {
                          console.log(`Skipping file "${relativePath}" because it exists and was not marked for overwrite.`);
-                         continue;
+                         continue; // 跳过此文件
                      }
                 }
 
-                // 核心修改：传递临时文件路径而不是 buffer
                 const result = await storage.upload(tempFilePath, fileName, file.mimetype, userId, targetFolderId, req.body.caption || '');
                 results.push(result);
 
             } finally {
-                // 无论成功或失败都删除临时文件
-                await fsp.unlink(tempFilePath).catch(err => console.error(`无法删除临时档: ${tempFilePath}`, err));
+                if (fs.existsSync(tempFilePath)) {
+                    await fsp.unlink(tempFilePath).catch(err => console.error(`无法删除临时档: ${tempFilePath}`, err));
+                }
             }
         }
         res.json({ success: true, results });
@@ -334,7 +369,9 @@ app.post('/upload', requireLogin, upload.array('files'), fixFileNameEncoding, as
         console.error("Upload processing error:", error);
         // 如果出错，确保清理所有已上传的临时文件
         for (const file of req.files) {
-            await fsp.unlink(file.path).catch(err => console.error(`无法删除错误处理中的临时档: ${file.path}`, err));
+            if (fs.existsSync(file.path)) {
+                await fsp.unlink(file.path).catch(err => console.error(`无法删除错误处理中的临时档: ${file.path}`, err));
+            }
         }
         res.status(500).json({ success: false, message: '处理上传时发生错误: ' + error.message });
     }
@@ -353,7 +390,6 @@ app.post('/api/text-file', requireLogin, async (req, res) => {
 
     try {
         await fsp.writeFile(tempFilePath, content, 'utf8');
-        const contentBuffer = Buffer.from(content, 'utf8'); // Some storage might still need buffer for size calculation
         let result;
 
         if (mode === 'edit' && fileId) {
@@ -378,8 +414,9 @@ app.post('/api/text-file', requireLogin, async (req, res) => {
         console.error("Text file error:", error);
         res.status(500).json({ success: false, message: '伺服器内部错误' });
     } finally {
-        // 清理临时文件
-        await fsp.unlink(tempFilePath).catch(err => console.error(`无法删除文字档的临时档: ${tempFilePath}`, err));
+        if (fs.existsSync(tempFilePath)) {
+            await fsp.unlink(tempFilePath).catch(err => console.error(`无法删除文字档的临时档: ${tempFilePath}`, err));
+        }
     }
 });
 
@@ -515,7 +552,7 @@ app.post('/api/folder', requireLogin, async (req, res) => {
     const { name, parentId } = req.body;
     const userId = req.session.userId;
     if (!name || !parentId) {
-        return res.status(400).json({ success: false, message: '缺少资料夾名称或父 ID。' });
+        return res.status(400).json({ success: false, message: '缺少资料夹名称或父 ID。' });
     }
     
     try {

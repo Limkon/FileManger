@@ -421,18 +421,23 @@ app.post('/api/check-move-conflict', requireLogin, async (req, res) => {
 
         const itemsToMove = await data.getItemsByIds(itemIds, userId);
         
-        let fileNamesToMove = itemsToMove.filter(i => i.type === 'file').map(f => f.name);
+        const topLevelFiles = itemsToMove.filter(i => i.type === 'file');
+        const topLevelFolders = itemsToMove.filter(i => i.type === 'folder');
+
+        let allPotentialConflicts = topLevelFiles.map(f => f.name);
+        const folderConflicts = await data.checkItemNameConflict(topLevelFolders.map(f => f.name), targetFolderId, userId);
         
-        const folderIdsToMove = itemsToMove.filter(i => i.type === 'folder').map(f => f.id);
-        if (folderIdsToMove.length > 0) {
-            const descendantFiles = await data.getDescendantFiles(folderIdsToMove, userId);
-            fileNamesToMove.push(...descendantFiles.map(f => f.fileName));
+        for (const folder of topLevelFolders) {
+            const willBeMerged = await data.findFolderByName(folder.name, targetFolderId, userId);
+            if (willBeMerged) {
+                const subItems = await data.getChildrenOfFolder(folder.id, userId);
+                allPotentialConflicts.push(...subItems.map(item => item.name));
+            } else {
+                 allPotentialConflicts.push(folder.name);
+            }
         }
 
-        const folderNamesToMove = itemsToMove.filter(i => i.type === 'folder').map(f => f.name);
-
-        const fileConflicts = await data.checkItemNameConflict(fileNamesToMove, targetFolderId, userId);
-        const folderConflicts = await data.checkItemNameConflict(folderNamesToMove, targetFolderId, userId);
+        const fileConflicts = await data.checkItemNameConflict(allPotentialConflicts, targetFolderId, userId);
 
         res.json({ success: true, fileConflicts, folderConflicts });
     } catch (error) {

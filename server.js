@@ -163,7 +163,7 @@ app.post('/api/user/change-password', requireLogin, async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     
     if (!oldPassword || !newPassword || newPassword.length < 4) {
-        return res.status(400).json({ success: false, message: '请提供旧密码和新密码，且新密码长度至少 4 个字元。' });
+        return res.status(400).json({ success: false, message: '请提供旧密码和新密码，且新密码长度至少 4 个字符。' });
     }
     try {
         const user = await data.findUserById(req.session.userId);
@@ -221,7 +221,7 @@ app.get('/api/admin/all-users', requireAdmin, async (req, res) => {
 app.post('/api/admin/add-user', requireAdmin, async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password || password.length < 4) {
-        return res.status(400).json({ success: false, message: '使用者名称和密码为必填项，且密码长度至少 4 个字元。' });
+        return res.status(400).json({ success: false, message: '使用者名称和密码为必填项，且密码长度至少 4 个字符。' });
     }
     try {
         const salt = await bcrypt.genSalt(10);
@@ -237,7 +237,7 @@ app.post('/api/admin/add-user', requireAdmin, async (req, res) => {
 app.post('/api/admin/change-password', requireAdmin, async (req, res) => {
     const { userId, newPassword } = req.body;
     if (!userId || !newPassword || newPassword.length < 4) {
-        return res.status(400).json({ success: false, message: '使用者 ID 和新密码为必填项，且密码长度至少 4 个字元。' });
+        return res.status(400).json({ success: false, message: '使用者 ID 和新密码为必填项，且密码长度至少 4 个字符。' });
     }
     try {
         const salt = await bcrypt.genSalt(10);

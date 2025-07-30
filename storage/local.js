@@ -2,7 +2,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const data = require('../data.js');
-const crypto = require('crypto'); // 修正：在此處加入 crypto 模組
+const crypto = require('crypto');
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'data', 'uploads');
 
@@ -14,6 +14,26 @@ async function setup() {
     }
 }
 setup();
+
+async function removeEmptyDirs(directoryPath) {
+    try {
+        if (!directoryPath.startsWith(UPLOAD_DIR)) return;
+
+        let currentPath = directoryPath;
+        while (currentPath !== UPLOAD_DIR && currentPath !== path.dirname(UPLOAD_DIR)) {
+            const files = await fs.readdir(currentPath);
+            if (files.length === 0) {
+                await fs.rmdir(currentPath);
+                currentPath = path.dirname(currentPath);
+            } else {
+                break;
+            }
+        }
+    } catch (error) {
+        console.warn(`清理空目录失败: ${directoryPath}`, error.message);
+    }
+}
+
 
 async function upload(tempFilePath, fileName, mimetype, userId, folderId) {
     const userDir = path.join(UPLOAD_DIR, String(userId));
@@ -34,7 +54,6 @@ async function upload(tempFilePath, fileName, mimetype, userId, folderId) {
     
     const stats = await fs.stat(finalFilePath);
 
-    // 新生：使用更可靠的方式生成唯一的 messageId，避免冲突
     const messageId = BigInt(Date.now()) * 1000000n + BigInt(crypto.randomInt(1000000));
 
     const dbResult = await data.addFile({
@@ -53,15 +72,24 @@ async function upload(tempFilePath, fileName, mimetype, userId, folderId) {
 async function remove(files, userId) {
     const filePaths = files.map(f => f.file_id);
     const messageIds = files.map(f => f.message_id);
+    const parentDirs = new Set();
 
     for (const filePath of filePaths) {
         try {
-            await fs.unlink(filePath);
+            if(fsSync.existsSync(filePath)) {
+                parentDirs.add(path.dirname(filePath));
+                await fs.unlink(filePath);
+            }
         } catch (e) {
             console.warn(`删除本地文件失败: ${filePath}`, e.message);
         }
     }
     await data.deleteFilesByIds(messageIds, userId);
+
+    for (const dir of parentDirs) {
+        await removeEmptyDirs(dir);
+    }
+    
     return { success: true };
 }
 

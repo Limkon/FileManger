@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件扫描与汇入</title>
+    <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/manager.css">
+    <style>
+        .setting-card {
+            margin-bottom: 20px;
+        }
+        #scan-log {
+            background-color: #212529;
+            color: #f8f9fa;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 15px;
+            border-radius: 5px;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 14px;
+        }
+        #scan-log .log-info { color: #adb5bd; }
+        #scan-log .log-success { color: #28a745; }
+        #scan-log .log-warn { color: #ffc107; }
+        #scan-log .log-error { color: #dc3545; }
+        .scan-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .scan-controls select, .scan-controls button {
+            padding: 10px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="main-header">
+            <h1>文件扫描与汇入</h1>
+            <a href="/admin" class="upload-link-btn"><i class="fas fa-arrow-left"></i> 返回管理后台</a>
+        </header>
+
+        <div class="setting-card">
+            <h2>扫描控制器</h2>
+            <p>选择要将文件汇入的使用者，然后选择储存类型开始扫描。系统会自动跳过数据库中已存在的记录。</p>
+            <div class="scan-controls">
+                <label for="user-select">汇入到使用者：</label>
+                <select id="user-select">
+                    <option value="">正在加载使用者...</option>
+                </select>
+                <button id="scan-local-btn" class="upload-link-btn">
+                    <i class="fas fa-hdd"></i> 扫描本地储存
+                </button>
+                <button id="scan-webdav-btn" class="upload-link-btn" style="background-color: #17a2b8;">
+                    <i class="fas fa-server"></i> 扫描 WebDAV
+                </button>
+            </div>
+        </div>
+        
+        <div class="setting-card">
+            <h2>扫描日志</h2>
+            <div id="scan-log">等待操作...</div>
+        </div>
+
+    </div>
+    <script src="/vendor/axios/axios.min.js"></script>
+    <script src="/scan.js"></script>
+</body>
+</html>

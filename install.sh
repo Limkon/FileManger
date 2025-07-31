@@ -6,7 +6,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${GREEN}--- 开始安装 Telegram 文件管理器 (手动配置模式) ---${NC}"
+echo -e "${GREEN}--- 开始安装文件管理器 (手动配置模式) ---${NC}"
 echo -e "${RED}================================================================${NC}"
 echo -e "${YELLOW}警告：此脚本会将所有项目文件直接解压到您当前的目录中！${NC}"
 echo -e "${YELLOW}为安全起见，强烈建议在一个新建的空文件夹中运行此命令。${NC}"
@@ -15,7 +15,7 @@ sleep 5
 
 # 1. 下载并解压项目到当前目录
 echo -e "\n${YELLOW}[1/3] 正在下载并解压项目文件...${NC}"
-curl -L https://github.com/Nexavor/NetworkFileManger/archive/refs/heads/master.tar.gz | tar -xz --strip-components=1 || { echo -e "${RED}错误：下载或解压失败。${NC}"; exit 1; }
+curl -L https://github.com/Limkon/NetworkFileManger/archive/refs/heads/master.tar.gz | tar -xz --strip-components=1 || { echo -e "${RED}错误：下载或解压失败。${NC}"; exit 1; }
 
 # 2. 安装依赖
 echo -e "\n${YELLOW}[2/3] 正在安装 Node.js 依赖...${NC}"

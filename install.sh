@@ -15,7 +15,7 @@ sleep 5
 
 # 1. 下载并解压项目到当前目录
 echo -e "\n${YELLOW}[1/3] 正在下载并解压项目文件...${NC}"
-curl -L https://github.com/Limkon/NetworkFileManger/archive/refs/heads/master.tar.gz | tar -xz --strip-components=1 || { echo -e "${RED}错误：下载或解压失败。${NC}"; exit 1; }
+curl -L https://github.com/Nexavor/NetworkFileManger/archive/refs/heads/master.tar.gz | tar -xz --strip-components=1 || { echo -e "${RED}错误：下载或解压失败。${NC}"; exit 1; }
 
 # 2. 安装依赖
 echo -e "\n${YELLOW}[2/3] 正在安装 Node.js 依赖...${NC}"

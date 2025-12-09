@@ -71,6 +71,6 @@
 ### 7. 重置密码
 执行 SQL 语句
 登陆 Cloudflare Dashboard，进入 D1 数据库 Console 控制台，执行以下 SQL   
-* UPDATE users SET password = '$2a$10$KgtZ.y6HUmQBTRUA0FVKqO5s0esptlR5HupHYvgh.H.g7gpDkPDl.' WHERE username = 'admin'   
+`UPDATE users SET password = '$2a$10$KgtZ.y6HUmQBTRUA0FVKqO5s0esptlR5HupHYvgh.H.g7gpDkPDl.' WHERE username = 'admin'`   
 可将密码重置为账号 admin / 密码 admin
 

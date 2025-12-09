@@ -68,5 +68,11 @@
 * **默认账号**: `admin`
 * **默认密码**: `admin`
 * *请登录后立即在设置中修改密码。*
-
+### 7. 重置密码
+执行 SQL 语句
+登陆 Cloudflare Dashboard，进入 D1 数据库 Console 操作台，执行以下 SQL
+UPDATE users 
+SET password = '$2a$10$KgtZ.y6HUmQBTRUA0FVKqO5s0esptlR5HupHYvgh.H.g7gpDkPDl.' 
+WHERE username = 'admin';
+可将密码重置为账号 admin / 密码 admin
 

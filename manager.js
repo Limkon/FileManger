@@ -1,4 +1,4 @@
-// public/manager.js - 完整全功能版
+// public/manager.js - 完整全功能版 (含前端打包下载 & 排序功能)
 
 // =================================================================================
 // 1. 全局工具函数 (无依赖，放在最外层)
@@ -62,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let viewMode = localStorage.getItem('viewMode') || 'grid'; 
     let isTrashMode = false;
     
-    // [新增] 排序状态：默认按名称升序
+    // 排序状态：默认按名称升序
     let sortState = { field: 'name', direction: 'asc' };
 
     // 冲突解决状态
@@ -297,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setDisplay('openBtn', isSingle && firstType === 'folder');
             setDisplay('previewBtn', isSingle && firstType === 'file');
             setDisplay('editBtn', isSingle && firstType === 'file'); 
-            setDisplay('downloadBtn', selectionHasFile);
+            setDisplay('downloadBtn', true); // [修改] 始终显示下载按钮，支持文件夹下载
             setDisplay('renameBtn', isSingle);
             setDisplay('shareBtn', isSingle);
             setDisplay('moveBtn', true); 
@@ -417,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 5. 其他逻辑函数
     
-    // [新增] 排序核心逻辑
+    // 排序核心逻辑
     function applySort() {
         if (!items || items.length === 0) {
             renderItems([]);
@@ -459,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSortIcons();
     }
 
-    // [新增] 更新表头图标 UI
+    // 更新表头图标 UI
     function updateSortIcons() {
         document.querySelectorAll('.sortable').forEach(th => {
             const field = th.dataset.sort;
@@ -563,7 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentPath = data.path;
             renderBreadcrumb();
             
-            // [修改] 在渲染前应用排序，applySort 内部会调用 renderItems
+            // 在渲染前应用排序
             applySort();
 
             updateFolderSelectForUpload(data.contents.folders);
@@ -658,7 +658,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 事件绑定区 ---
     
-    // [新增] 表头排序点击事件
+    // 表头排序点击事件
     document.querySelectorAll('.sortable').forEach(th => {
         th.addEventListener('click', () => {
             const field = th.dataset.sort;
@@ -809,61 +809,130 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // --- 批量下载逻辑 ---
+    // --- [修改] 下载功能：支持文件夹前端打包 ---
     if(downloadBtn) downloadBtn.addEventListener('click', async () => {
         if (selectedItems.size === 0) return;
-        
-        // 筛选出所有选中的文件ID
-        const filesToDownload = [];
+
+        // 1. 区分选中的是单文件还是包含文件夹/多文件
+        const selectedList = [];
         selectedItems.forEach(idStr => {
             const [type, id] = parseItemId(idStr);
-            if (type === 'file') {
-                filesToDownload.push(id);
-            }
+            const item = items.find(i => getItemId(i) === idStr);
+            if (item) selectedList.push({ type, id, item });
         });
 
-        if (filesToDownload.length === 0) {
-            return alert('所选项中没有文件（不支持文件夹下载）');
-        }
-
-        // 单文件下载（保持原有逻辑）
-        if (filesToDownload.length === 1) {
+        // 场景一：单文件直接下载 (速度最快)
+        if (selectedList.length === 1 && selectedList[0].type === 'file') {
+            const item = selectedList[0].item;
             TaskManager.show('正在请求下载...', 'fas fa-download');
             setTimeout(() => TaskManager.success('下载已开始'), 1500);
-            window.open(`/download/proxy/${filesToDownload[0]}`, '_blank');
+            window.open(`/download/proxy/${item.message_id}`, '_blank');
             return;
         }
 
-        // 多文件批量下载
-        if (!confirm(`即将逐个下载 ${filesToDownload.length} 个文件。\n\n提示：浏览器可能会拦截多个文件的自动下载，请留意地址栏右侧的拦截提示并允许“下载多个文件”。\n\n是否继续？`)) return;
+        // 场景二：多文件或包含文件夹 -> 前端打包下载
+        if (!confirm(`即将打包下载 ${selectedList.length} 个项目。\n\n注意：\n1. 文件夹会被递归打包。\n2. 文件过多过大可能会消耗较多浏览器内存。\n\n是否继续？`)) return;
 
-        TaskManager.show(`正在批量下载 ${filesToDownload.length} 个文件...`, 'fas fa-download');
+        try {
+            // A. 递归获取所有文件信息
+            TaskManager.show('正在扫描文件结构...', 'fas fa-search');
+            const filesToZip = []; // 格式: { name: "path/to/file.txt", url: "..." }
 
-        for (let i = 0; i < filesToDownload.length; i++) {
-            const fileId = filesToDownload[i];
-            
-            // 更新进度条
-            const progress = Math.round(((i + 1) / filesToDownload.length) * 100);
-            TaskManager.update(progress, `下载中: ${i + 1}/${filesToDownload.length}`);
-
-            // 创建隐藏 iframe 触发下载，避免弹出大量新窗口
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = `/download/proxy/${fileId}`;
-            document.body.appendChild(iframe);
-
-            // 延迟清理 iframe
-            setTimeout(() => {
-                if (document.body.contains(iframe)) {
-                    document.body.removeChild(iframe);
+            // 递归遍历函数
+            async function traverse(targetId, targetType, currentPath, targetName) {
+                if (targetType === 'file') {
+                    // 如果是文件，直接加入列表
+                    filesToZip.push({
+                        path: currentPath + targetName,
+                        id: targetId
+                    });
+                } else {
+                    // 如果是文件夹，调用 API 获取内容
+                    const folderPath = currentPath + targetName + '/';
+                    try {
+                        // 使用现有的 API 获取文件夹内容
+                        const res = await axios.get(`/api/folder/${targetId}?t=${Date.now()}`);
+                        const contents = res.data.contents;
+                        
+                        // 递归处理子文件
+                        for (const f of contents.files) {
+                            filesToZip.push({
+                                path: folderPath + f.name,
+                                id: f.message_id // 注意：文件下载用 message_id
+                            });
+                        }
+                        // 递归处理子文件夹
+                        for (const d of contents.folders) {
+                            await traverse(d.encrypted_id, 'folder', folderPath, d.name);
+                        }
+                    } catch (e) {
+                        console.error(`读取文件夹 ${targetName} 失败:`, e);
+                        // 可以选择跳过或报错
+                    }
                 }
-            }, 60000); // 1分钟后清理
+            }
 
-            // 间隔 1 秒，防止浏览器屏蔽过多并发请求
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // 开始遍历选中项
+            for (const itemObj of selectedList) {
+                await traverse(itemObj.id, itemObj.type, '', itemObj.item.name);
+            }
+
+            if (filesToZip.length === 0) {
+                TaskManager.error('没有可下载的文件');
+                return;
+            }
+
+            // B. 开始下载并压缩
+            const zip = new JSZip();
+            let downloadedCount = 0;
+            const total = filesToZip.length;
+
+            TaskManager.show(`准备下载 ${total} 个文件...`, 'fas fa-file-archive');
+
+            // 串行下载以保证稳定性 (如果追求速度可改为 Promise.all 批量并发)
+            for (let i = 0; i < total; i++) {
+                const fileInfo = filesToZip[i];
+                TaskManager.show(`[${i+1}/${total}] 下载中: ${fileInfo.path.split('/').pop()}`, 'fas fa-download');
+                TaskManager.update(Math.round(((i) / total) * 100));
+
+                try {
+                    // 请求文件 Blob 数据
+                    const response = await axios.get(`/download/proxy/${fileInfo.id}`, { 
+                        responseType: 'blob' 
+                    });
+                    
+                    // 添加到 ZIP 对象
+                    zip.file(fileInfo.path, response.data);
+                    downloadedCount++;
+                } catch (e) {
+                    console.error(`下载文件 ${fileInfo.path} 失败`, e);
+                    zip.file(fileInfo.path + ".error.txt", "下载失败: " + e.message);
+                }
+            }
+
+            // C. 生成 ZIP 文件
+            TaskManager.show('正在打包压缩...', 'fas fa-cog fa-spin');
+            
+            const zipContent = await zip.generateAsync({ 
+                type: "blob",
+                compression: "DEFLATE", // 启用压缩
+                compressionOptions: { level: 5 } // 压缩等级 1-9
+            }, (metadata) => {
+                // 压缩进度更新
+                TaskManager.update(metadata.percent.toFixed(0), `压缩中 ${metadata.percent.toFixed(0)}%`);
+            });
+
+            // D. 触发保存
+            const zipFilename = selectedList.length === 1 ? `${selectedList[0].item.name}.zip` : `batch_download_${Date.now()}.zip`;
+            saveAs(zipContent, zipFilename);
+            
+            TaskManager.success('打包下载完成');
+
+        } catch (error) {
+            console.error(error);
+            TaskManager.error('打包失败: ' + error.message);
+            alert('打包下载过程中出错，请查看控制台。');
         }
-
-        TaskManager.success('批量下载任务已全部发送');
     });
 
     if(editBtn) editBtn.addEventListener('click', async () => {
@@ -920,7 +989,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     if(closePreviewBtn) closePreviewBtn.onclick = () => previewModal.style.display = 'none';
     
-    // --- 修复：加密/解密逻辑增强（验证原密码） ---
     if(lockBtn) lockBtn.addEventListener('click', async () => {
         if (selectedItems.size !== 1) return;
         const idStr = Array.from(selectedItems)[0]; const [type, id] = parseItemId(idStr);
@@ -966,7 +1034,6 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('操作失败: ' + (e.response?.data?.message || e.message)); 
         }
     });
-    // ------------------------------------
 
     if(viewSwitchBtn) viewSwitchBtn.addEventListener('click', () => {
         viewMode = viewMode === 'grid' ? 'list' : 'grid';

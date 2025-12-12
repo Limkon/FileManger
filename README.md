@@ -2,7 +2,6 @@
 
 可以直接通过 Cloudflare 网页控制台完成部署。这种方式非常直观，适合手动发布。
 # 支持webdav/S3/telegram,打造属于自己的专属网盘。
-## 受限于Cloudflare的内存和CPU的限制无法完成在线打包，所以不支持文件夹下载。
 ### 1. 准备工作
 登录 Cloudflare Dashboard。   
 在左侧菜单 Workers & Pages-> KV 中，创建一个命名空间（建议命名：netdrv-kv）。   
